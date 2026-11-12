@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>AgentKeeper — Onchain AI Agent Vault & Covenant Guard</title>
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <div class="hud-container">
+    <!-- Header -->
+    <header class="hud-header">
+      <div class="brand-group">
+        <img src="icon.svg" alt="AgentKeeper" class="brand-logo">
+        <div>
+          <span class="brand-title">AgentKeeper Studio</span>
+          <span class="hud-badge">v1.0.0</span>
+          <span class="hud-badge green">Power of 10 Safety</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <select id="networkSelect" class="network-pill">
+          <option value="base-mainnet" selected>Base Mainnet (8453)</option>
+          <option value="bch-chipnet">BCH Chipnet (CHIP-2022-02)</option>
+          <option value="arc-mainnet">Circle Arc (5042)</option>
+          <option value="somnia-shannon">Somnia Testnet (50312)</option>
+        </select>
+        <span id="hostStatusPill" class="hud-badge">Connecting…</span>
+      </div>
+    </header>
+
+    <!-- Segmented Navigation -->
+    <nav class="nav-segment-bar">
+      <button class="nav-tab active" data-tab="tab-bch">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        <span>BCH CashTokens Guard</span>
+      </button>
+      <button class="nav-tab" data-tab="tab-treasury">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <span>Autonomous Treasury</span>
+      </button>
+      <button class="nav-tab" data-tab="tab-x402">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        <span>x402 Micropayments</span>
+      </button>
+      <button class="nav-tab" data-tab="tab-erc4337">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+        <span>ERC-4337 Simulation</span>
+      </button>
+      <button class="nav-tab" data-tab="tab-telemetry">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        <span>Telemetry & Chat Sync</span>
+      </button>
+    </nav>
+
+    <!-- Metrics Row -->
+    <div style="padding: 12px 20px 0 20px;">
+      <div class="metrics-row">
+        <div class="metric-card">
+          <span class="metric-label">Vault Status</span>
+          <span id="metricVaultStatus" class="metric-value" style="color: var(--green-pass);">ARMED</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Active Covenants</span>
+          <span id="metricCovenantCount" class="metric-value">4 / 4 Valid</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Daily Spend Limit</span>
+          <span id="metricDailySpend" class="metric-value">150.00 BCH</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">x402 Stream Proofs</span>
+          <span id="metricStreamProofs" class="metric-value">100% Settled</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- HUD Body -->
+    <main class="hud-body">
+      <!-- TAB 1: BCH CashTokens Guard -->
+      <section id="tab-bch" class="tab-pane active">
+        <div class="hud-grid">
+          <div class="hud-card">
+            <div class="hud-card-header">
+              <span class="hud-card-title">CHIP-2022-02 Prefix Decoder & Covenant Rules</span>
+              <span class="hud-badge">BCH Mainnet / Chipnet</span>
+            </div>
+            <div class="form-group">
+              <span class="form-label">Simulation Presets:</span>
+              <div class="preset-pills">
+                <button class="preset-pill" id="presetBchValidFungible">Valid 1M CashTokens</button>
+                <button class="preset-pill" id="presetBchNftState">Immutable NFT State</button>
+                <button class="preset-pill" id="presetBchOverQuota">Exceeds Daily Quota (Block)</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Category ID (32 bytes hex)</label>
+              <input id="bchCategoryInput" class="form-input" value="9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Token Amount (Units)</label>
+              <input id="bchAmountInput" class="form-input" type="number" value="1000000">
+            </div>
+            <div class="form-group">
+              <label class="form-label">NFT Commitment State (Hex)</label>
+              <input id="bchCommitmentInput" class="form-input" value="0100f2fe4facfe00">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Withdrawal Spend Request (BCH)</label>
+              <input id="bchSpendInput" class="form-input" type="number" step="0.1" value="2.5">
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 8px;">
+              <button id="btnValidateBch" class="btn-primary" style="flex: 1;">Validate CashTokens Covenant</button>
+              <button id="btnSyncBchToChat" class="btn-secondary">Send to Anna Chat</button>
+            </div>
+          </div>
+
+          <div class="hud-card">
+            <div class="hud-card-header">
+              <span class="hud-card-title">Covenant Invariant Execution Output</span>
+              <span id="bchStatusBadge" class="hud-badge green">READY</span>
+            </div>
+            <div id="bchConsole" class="terminal-box">
+              <div class="terminal-line info">[INIT] CashTokens Guard loaded with CHIP-2022-02 script prefix decoder.</div>
+              <div class="terminal-line">[POLICY] Daily spending bound: 10.0 BCH per agent fleet.</div>
+              <div class="terminal-line">[POLICY] NFT capability: IMMUTABLE state commitment verification active.</div>
+              <div class="terminal-line pass">System ready for evaluation.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: Autonomous Treasury -->
+      <section id="tab-treasury" class="tab-pane">
+        <div class="hud-grid">
+          <div class="hud-card">
+            <div class="hud-card-header">
+              <span class="hud-card-title">Fleet Treasury & Quota Configuration</span>
+              <span class="hud-badge">Multi-Agent</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Authorized Fleet Agent ID</label>
+              <input id="treasuryAgentInput" class="form-input" value="quant-executor-fleet-v6">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Per-Transaction Hard Cap ($ / USDC)</label>
+              <input id="treasuryTxCapInput" class="form-input" type="number" value="50.0">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Rolling 24h Spend Cap ($ / USDC)</label>
+              <input id="treasuryDailyCapInput" class="form-input" type="number" value="250.0">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Recipient Whitelist (Strict Enforce)</label>
+              <input id="treasuryWhitelistInput" class="form-input" value="0x4200000000000000000000000000000000000006, 0x833589fcd6edb6e08f4c7c32d4f71b54bda02913">
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 8px;">
+              <button id="btnSaveTreasury" class="btn-primary" style="flex: 1;">Save Treasury Limits (Anna Storage)</button>
+              <button id="btnSimulateTreasury" class="btn-secondary">Test Spend</button>
+            </div>
+          </div>
+
+          <div class="hud-card">
+            <div class="hud-card-header">
+              <span class="hud-card-title">Treasury Audit & Ledger Telemetry</span>
+              <span class="hud-badge green">ENFORCED</span>
+            </div>
+            <div id="treasuryConsole" class="terminal-box">
+              <div class="terminal-line info">[TREASURY] AgentKeeper programmable multi-chain vault initialized.</div>
+              <div class="terminal-line">[POLICY] Zero-Contact Invariant: Unlisted recipients strictly rejected.</div>
+              <div class="terminal-line pass">[STATE] Current rolling 24h consumed: $14.20 / $250.00.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: x402 Micropayments -->
+      <section id="tab-x402" class="tab-pane">
+        <div class="hud-grid">
+          <div class="hud-card">
+            <div class="hud-card-header">
+              <span class="hud-card-title">HTTP 402 Paywall Payment Stream Verifier</span>
+              <span class="hud-badge">FastMCP Engine</span>
+            </div>
+            <div class="form-group">
+              <span class="form-label">Simulation Presets:</span>
+              <div class="preset-pills">
+                <button class="preset-pill" id="presetX402Inference">AI Inference Query (0.001 USDC)</button>
+                <button class="preset-pill" id="presetX402Batch">Batch Settlement (5.00 USDC)</button>
+                <button class="preset-pill" id="presetX402Replay">Replay Nonce Attack (Reject)</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">API Resource Target</label>
+              <input id="x402ResourceInput" class="form-input" value="https://api.deepseek.com/v1/chat/completions">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Claim Notional (USDC)</label>
+              <input id="x402NotionalInput" class="form-input" type="number" step="0.0001" value="0.0025">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Signed Payment Nonce</label>
+              <input id="x402NonceInput" class="form-input" type="number" value="14892">
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 8px;">
+              <button id="btnVerifyX402" class="btn-primary" style="flex: 1;">Verify & Settle x402 Claim</button>
+              <button id="btnSyncX402ToChat" class="btn-secondary">Send to Anna Chat</button>
+            </div>
+          </div>
+
+          <div class="hud-card">
+            <div class="hud-card-header">
+              <span class="hud-card-title">Micropayment Settlement Receipt</span>
+              <span id="x402StatusBadge" class="hud-badge green">IDLE</span>
+            </div>
+            <div id="x402Console" class="terminal-box">
+              <div class="terminal-line info">[x402] HTTP 402 Settlement Engine active.</div>
+              <div class="terminal-line">[ENGINE] secp256k1 signature validation + replay protection bound.</div>
+              <div class="terminal-line pass">Waiting for micropayment stream validation…</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: ERC-4337 Simulation -->
+      <section id="tab-erc4337" class="tab-pane">
+        <div class="hud-grid">
+          <div class="hud-card">
+            <div class="hud-card-header">
+              <span class="hud-card-title">UserOperation Bundler & Paymaster Pre-Flight</span>
+              <span class="hud-badge">EVM EntryPoint v0.7</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Sender Smart Account</label>
+              <input id="userOpSenderInput" class="form-input" value="0x742d35Cc6634C0532925a3b844Bc454e4438f44e">
+            </div>
+            <div class="form-group">
+              <label class="form-label">CallData Payload (Hex)</label>
+              <input id="userOpDataInput" class="form-input" value="0xa9059cbb000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda029130000000000000000000000000000000000000000000000000000000005f5e100">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Verification Gas Limit</label>
+              <input id="userOpGasInput" class="form-input" type="number" value="150000">
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 8px;">
+              <button id="btnSimulateUserOp" class="btn-primary" style="flex: 1;">Simulate UserOp Invariants</button>
+              <button id="btnSyncUserOpToChat" class="btn-secondary">Send to Anna Chat</button>
+            </div>
+          </div>
+
+          <div class="hud-card">
+            <div class="hud-card-header">
+              <span class="hud-card-title">Pre-Flight Simulation Trace</span>
+              <span id="userOpStatusBadge" class="hud-badge green">READY</span>
+            </div>
+            <div id="userOpConsole" class="terminal-box">
+              <div class="terminal-line info">[SIMULATOR] Pre-flight EVM call simulation armed.</div>
+              <div class="terminal-line">[CHECK] Zero gas spike guarantee (Power of 10 Holzmann Invariants).</div>
+              <div class="terminal-line pass">Ready for pre-flight transaction dispatch.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 5: Telemetry & Chat Sync -->
+      <section id="tab-telemetry" class="tab-pane">
+        <div class="hud-card">
+          <div class="hud-card-header">
+            <span class="hud-card-title">Continuous Telemetry & Invariant Audit Log</span>
+            <button id="btnClearTelemetry" class="btn-secondary">Clear Log</button>
+          </div>
+          <div id="telemetryConsole" class="terminal-box" style="min-height: 280px;">
+            <div class="terminal-line info">[SYSTEM] AgentKeeper Onchain Vault & Covenant Guard v1.0.0 booted.</div>
+            <div class="terminal-line">[STANDARD] Power of 10 Safety Standards: Fully Compliant.</div>
+            <div class="terminal-line pass">[CONNECT] Standalone runtime operational with Anna Host API hook ready.</div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="hud-footer">
+      <span>AgentKeeper Studio · Multi-Chain Covenant Security Protocol</span>
+      <span>Base · Circle Arc · Bitcoin Cash · CreditCoin 3.0</span>
+    </footer>
+  </div>
+</body>
+</html>
