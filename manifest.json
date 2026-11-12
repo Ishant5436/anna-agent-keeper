@@ -1,0 +1,80 @@
+{
+  "schema": 2,
+  "permissions": [
+    "chat.write_message",
+    "llm.complete",
+    "storage.read",
+    "storage.write",
+    "ui.svg"
+  ],
+  "required_executas": [],
+  "system_prompt_addendum": "The user has AgentKeeper Onchain Vault & Covenant Guard open. Whenever the user discusses AI agent treasuries, Bitcoin Cash CashTokens, UTXO covenants, ERC-4337 account abstraction, x402 payment streams, or multi-chain agent spending guards, automatically leverage AgentKeeper to simulate transactions, enforce spending bounds, and verify covenant invariants.",
+  "user_message_prefix_template": "[AgentKeeper Guard] {user_message}",
+  "tags": [
+    "ai-agents",
+    "treasury",
+    "vault",
+    "bch",
+    "cashtokens",
+    "erc4337",
+    "x402",
+    "developer-tools",
+    "security",
+    "web3"
+  ],
+  "ui": {
+    "bundle": {
+      "format": "static-spa",
+      "entry": "index.html",
+      "external_origins": []
+    },
+    "views": [
+      {
+        "name": "main",
+        "title": "AgentKeeper Vault & Guard",
+        "default": true,
+        "default_size": {
+          "w": 1040,
+          "h": 780
+        },
+        "min_size": {
+          "w": 780,
+          "h": 540
+        },
+        "max_size": {
+          "w": 1440,
+          "h": 980
+        }
+      }
+    ],
+    "host_api": {
+      "chat": [
+        "write_message"
+      ],
+      "llm": [
+        "complete"
+      ],
+      "storage": [
+        "get",
+        "set"
+      ],
+      "window": [
+        "set_title",
+        "ready"
+      ]
+    },
+    "csp_overrides": {},
+    "state_merge": "last_writer_wins",
+    "form_factors": [
+      "desktop",
+      "mobile"
+    ]
+  },
+  "dev": {
+    "fixtures": [
+      "fixtures/*.jsonl"
+    ],
+    "seed_storage": {},
+    "user_id": 1
+  }
+}

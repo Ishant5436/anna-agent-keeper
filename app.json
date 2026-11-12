@@ -1,0 +1,17 @@
+{
+  "slug": "agent-keeper-vault",
+  "name": "AgentKeeper - Onchain AI Agent Vault & Covenant Guard",
+  "version": "1.0.0",
+  "tagline": "Autonomous AI Agent Multi-Chain Treasury Vault, BCH CashTokens Covenant & x402 Payment Guard",
+  "description": "AgentKeeper is an autonomous onchain vault and multi-chain covenant execution guard designed specifically for AI agent fleets operating in decentralized finance.\n\n### Core Invariants & Multi-Chain Guard Features\n- **Autonomous Agent Treasury Vault:** Enforces hard daily spending limits, withdrawal quotas, and multi-agent role-based access control across Base, Circle Arc, and EVM chains.\n- **Bitcoin Cash CashTokens Covenant Guard (CHIP-2022-02):** Validates covenant script prefixes, immutable state commitments, and token categories to prevent rogue agents from draining UTXO balances.\n- **x402 Micropayment Stream Settlement:** High-throughput streaming settlement engine for automated agent-to-agent inference APIs with cryptographic receipt proofs and zero-loss guarantees.\n- **ERC-4337 Account Abstraction Simulation:** Pre-flight UserOp bundler validation, paymaster invariant checks, and gas limit containment before dispatching onchain.\n- **CreditCoin 3.0 Real-World Asset Ledger:** Real-time logging of agent credit lines, bond repayments, and deterministic proof records.\n- **Deterministic Safety Standards:** Built under Gerard J. Holzmann's Power of 10 Safety Invariants with bounded loops, zero dynamic allocation on critical paths, and checked return values.\n\n### Anna OS Chat Agent Integration\nSeamlessly integrates into the Anna AI workspace. When discussing agent treasuries, CashTokens covenants, or transaction simulations, AgentKeeper provides instant structured guardrails directly to your active chat workflow.",
+  "category": "developer-tools",
+  "logo_file": "assets/logo.png",
+  "cover_url": "https://raw.githubusercontent.com/Ishant5436/agent-keeper-mcp/main/assets/cover.png",
+  "screenshots": [
+    "assets/screenshot_1.png",
+    "assets/screenshot_2.png"
+  ],
+  "homepage_url": "https://github.com/Ishant5436/agent-keeper-mcp",
+  "support_url": "https://github.com/Ishant5436/agent-keeper-mcp/issues",
+  "privacy_url": "https://github.com/Ishant5436/agent-keeper-mcp#privacy"
+}
