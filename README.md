@@ -11,6 +11,29 @@ AgentKeeper brings institutional-grade covenant security to autonomous AI agent 
 - **ERC-4337 Account Abstraction Simulation:** Pre-flight UserOp bundler validation and paymaster gas limit enforcement.
 - **Deterministic Safety Standards:** Built in compliance with Gerard J. Holzmann's Power of 10 Safety Invariants.
 
+## Simulation Scope
+
+AgentKeeper Studio is a **simulator**. Every check runs locally in the app: nothing is signed or broadcast on-chain, and no funds move. The dashboard is computed live from the same rules the tabs enforce. It counts only what you simulated in the current session (use **Reset simulation** to start over). It never shows historical or on-chain data.
+
+### Which limit applies where
+
+| Dashboard card | Limit | Scope | Enforced in |
+|---|---|---|---|
+| **BCH Covenant Daily Limit** | 10.00 BCH, rolling 24h | Per agent fleet. Each verified BCH withdrawal uses part of it. | BCH CashTokens Guard tab |
+| **Treasury 24h Spend Cap** | $250.00 USDC, rolling 24h, plus $50.00 per transaction (editable) | Per agent, EVM treasury spends only. Separate from the BCH limit. | Autonomous Treasury tab (**Test Spend**) |
+| **x402 Settlements** | No cap. Each claim needs a nonce greater than the last settled nonce. | Counts claims settled and rejected in this session. Starts at **0 settled**. | x402 Micropayments tab (**Verify & Settle**) |
+| ERC-4337 (no card) | 1,000,000 verification gas | Per UserOperation | ERC-4337 Simulation tab |
+
+## Testing
+
+`tests/e2e.cjs` drives every tab and button in Chromium. It checks that the dashboard always matches what the tabs enforce, checks mobile and minimum window sizes, and runs once more against a mock Anna host to verify the `chat.write_message({ text })` and `storage.get/set` calls.
+
+```bash
+npm install
+npx playwright install chromium
+npm test
+```
+
 ## Deployment & Verification
 
 ```bash

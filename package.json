@@ -1,0 +1,12 @@
+{
+  "name": "agent-keeper-vault",
+  "version": "1.0.1",
+  "private": true,
+  "description": "AgentKeeper Studio Anna App bundle and end-to-end tests.",
+  "scripts": {
+    "test": "node tests/e2e.cjs bundle"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}
