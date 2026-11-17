@@ -55,6 +55,23 @@ const $ = (id) => document.getElementById(id);
 const val = (id) => ($(id) ? $(id).value : "");
 const isEvmAddress = (s) => /^0x[0-9a-fA-F]{40}$/.test(s);
 
+// Parses a non-negative whole number. Accepts plain digits of any length, and
+// forms a number field allows such as "1e6" when they are exact integers.
+function parseWholeNumber(raw) {
+  if (/^\d+$/.test(raw)) return BigInt(raw);
+  const n = Number(raw);
+  return raw !== "" && Number.isSafeInteger(n) && n >= 0 ? BigInt(n) : null;
+}
+
+// How to refer to the x402 replay threshold. Before anything is settled it is
+// a starting floor, not a "last settled" nonce.
+function nonceRef() {
+  const x = session.x402;
+  return x.receipts.length
+    ? `last settled nonce ${x.lastNonce}`
+    : `starting nonce floor ${x.lastNonce} (no claims settled yet)`;
+}
+
 function fmtNum(n, minDp = 2, maxDp = 8) {
   return Number(n).toLocaleString("en-US", { minimumFractionDigits: minDp, maximumFractionDigits: maxDp });
 }
@@ -109,8 +126,8 @@ function renderBindings() {
     const key = el.getAttribute("data-bind");
     if (key in bindings) el.textContent = bindings[key];
   });
-  const nonceHint = $("x402LastNonceHint");
-  if (nonceHint) nonceHint.textContent = String(session.x402.lastNonce);
+  const nonceHint = $("x402NonceRef");
+  if (nonceHint) nonceHint.textContent = nonceRef();
 }
 
 function renderDashboard() {
@@ -217,17 +234,21 @@ function initBchValidation() {
     if (!/^[0-9a-fA-F]{64}$/.test(category)) {
       return reject("INVALID CATEGORY", "Category ID must be 32 bytes of hex (64 hex characters).");
     }
-    if (!/^\d+$/.test(amountRaw) || BigInt(amountRaw) > CASHTOKENS_MAX_AMOUNT) {
+    const tokenAmount = parseWholeNumber(amountRaw);
+    if (tokenAmount === null || tokenAmount > CASHTOKENS_MAX_AMOUNT) {
       return reject("INVALID AMOUNT", "Token amount must be a whole number from 0 to 9223372036854775807.");
     }
     if (commitment && !/^([0-9a-fA-F]{2})+$/.test(commitment)) {
       return reject("INVALID COMMITMENT", "NFT commitment must be hex bytes (even number of hex characters).");
     }
-    if (!(spend > 0)) {
+    if (!(spend > 0) || !Number.isFinite(spend)) {
       return reject("INVALID SPEND", "Withdrawal amount must be greater than 0 BCH.");
     }
 
     const spendSats = Math.round(spend * BCH_SATS);
+    if (spendSats < 1) {
+      return reject("INVALID SPEND", "Withdrawal amount must be at least 0.00000001 BCH (1 satoshi).");
+    }
     const usedSats = bchUsedSats();
     const remainingSats = Math.max(0, limitSats - usedSats);
 
@@ -346,9 +367,10 @@ function initTreasury() {
     if (!isEvmAddress(recipient)) return reject("Recipient is not a valid EVM address.");
     if (!p.whitelist.some((a) => a.toLowerCase() === recipient.toLowerCase()))
       return reject("Recipient is not on the whitelist (Zero-Contact Invariant).");
-    if (!(amount > 0)) return reject("Amount must be greater than 0.");
+    if (!(amount > 0) || !Number.isFinite(amount)) return reject("Amount must be greater than 0.");
 
     const micro = Math.round(amount * USDC_MICRO);
+    if (micro < 1) return reject("Amount must be at least 0.000001 USDC.");
     const txCapMicro = Math.round(p.txCapUsdc * USDC_MICRO);
     const dailyCapMicro = Math.round(p.dailyCapUsdc * USDC_MICRO);
     const usedMicro = treasuryUsedMicro();
@@ -469,10 +491,11 @@ function initX402Validation() {
     logLine("x402Console", `Evaluating x402 claim: Target=${resource} Notional=${isNaN(notional) ? "?" : notional} USDC Nonce=${nonceRaw || "?"}`);
 
     if (!/^https?:\/\/\S+$/i.test(resource)) return reject("INVALID RESOURCE", "API resource must be an http(s) URL.");
-    if (!(notional > 0)) return reject("INVALID AMOUNT", "Claim notional must be greater than 0 USDC.");
+    if (!(notional > 0) || !Number.isFinite(notional)) return reject("INVALID AMOUNT", "Claim notional must be greater than 0 USDC.");
+    if (Math.round(notional * USDC_MICRO) < 1) return reject("INVALID AMOUNT", "Claim notional must be at least 0.000001 USDC.");
     if (!Number.isSafeInteger(nonce)) return reject("INVALID NONCE", "Nonce must be a whole number.");
     if (nonce <= x.lastNonce)
-      return reject("REPLAY ATTACK BLOCKED", `Nonce ${nonce} ≤ last settled nonce ${x.lastNonce}. Monotonicity violated.`);
+      return reject("REPLAY ATTACK BLOCKED", `Nonce ${nonce} ≤ ${nonceRef()}. Monotonicity violated.`);
 
     const micro = Math.round(notional * USDC_MICRO);
     const receipt = { id: `rec_${nonce}`, nonce, micro, resource, at: Date.now() };
@@ -625,6 +648,9 @@ async function boot() {
   initTreasury();
   initX402Validation();
   initErc4337();
+  // Some browsers restore typed form values on reload. Start from the form
+  // when it is valid, otherwise put the defaults back into it.
+  if (applyTreasuryForm().length) writeTreasuryForm(session.treasury.policy);
   renderDashboard();
 
   $("btnResetSimulation")?.addEventListener("click", resetSimulation);
