@@ -44,6 +44,11 @@ function freshSession() {
 }
 let session = freshSession();
 let anna = null;
+// Set once the user edits the treasury form, so a late storage load never
+// overwrites their edits.
+let treasuryFormTouched = false;
+const TAB_CONSOLES = ["bchConsole", "treasuryConsole", "x402Console", "userOpConsole"];
+const initialConsoleHtml = {};
 
 // ---------- Helpers ----------
 const $ = (id) => document.getElementById(id);
@@ -70,9 +75,11 @@ function setBadge(id, text, tone) {
 }
 
 // Terminal Logger Helper
-function logLine(elementId, text, type = "") {
+function logLine(elementId, text, type = "", { keepPlaceholder = false } = {}) {
   const el = $(elementId);
   if (!el) return;
+  // The first real entry replaces any "nothing happened yet" placeholder line.
+  if (!keepPlaceholder) el.querySelectorAll(".terminal-placeholder").forEach((p) => p.remove());
   const line = document.createElement("div");
   line.className = `terminal-line ${type}`.trim();
   line.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
@@ -310,6 +317,7 @@ function applyTreasuryForm() {
 function initTreasury() {
   ["treasuryAgentInput", "treasuryTxCapInput", "treasuryDailyCapInput", "treasuryWhitelistInput"].forEach((id) => {
     $(id)?.addEventListener("input", () => {
+      treasuryFormTouched = true;
       const errors = applyTreasuryForm();
       if (errors.length) setBadge("treasuryStatusBadge", "POLICY INVALID", "amber");
       else if ($("treasuryStatusBadge").textContent === "POLICY INVALID") setBadge("treasuryStatusBadge", "READY", "muted");
@@ -348,7 +356,7 @@ function initTreasury() {
     if (micro > txCapMicro) return reject(`${fmtUsd(amount)} exceeds the per-transaction cap of ${fmtUsd(p.txCapUsdc)}.`);
     if (usedMicro + micro > dailyCapMicro)
       return reject(
-        `${fmtUsd(amount)} would exceed the rolling 24h cap: ${fmtUsd(usedMicro / USDC_MICRO)} of ${fmtUsd(p.dailyCapUsdc)} already used, ${fmtUsd((dailyCapMicro - usedMicro) / USDC_MICRO)} remaining.`
+        `${fmtUsd(amount)} would exceed the rolling 24h cap: ${fmtUsd(usedMicro / USDC_MICRO)} of ${fmtUsd(p.dailyCapUsdc)} already used, ${fmtUsd(Math.max(0, dailyCapMicro - usedMicro) / USDC_MICRO)} remaining.`
       );
 
     session.treasury.ledger.push({ at: Date.now(), micro, recipient });
@@ -431,10 +439,14 @@ async function loadSavedTreasury() {
   }
   const policy = normalizeSavedTreasury(raw);
   if (!policy) return;
+  if (treasuryFormTouched) {
+    logLine("treasuryConsole", `Saved treasury limits found in ${source} but not applied, because the form was already edited.`, "info", { keepPlaceholder: true });
+    return;
+  }
   session.treasury.policy = policy;
   writeTreasuryForm(policy);
   renderDashboard();
-  logLine("treasuryConsole", `Loaded saved treasury limits from ${source}.`, "info");
+  logLine("treasuryConsole", `Loaded saved treasury limits from ${source}.`, "info", { keepPlaceholder: true });
 }
 
 // ---------- x402 Micropayments ----------
@@ -468,7 +480,7 @@ function initX402Validation() {
     x.receipts.push(receipt);
     x.last = { status: "SETTLED", receipt, resource, notional, nonce };
     setBadge("x402StatusBadge", "CLAIM SETTLED", "green");
-    logLine("x402Console", `[PASS] Signature valid. Nonce monotonicity confirmed (${nonce} > previous).`, "pass");
+    logLine("x402Console", `[PASS] Nonce monotonicity confirmed (${nonce} > previous). Signature check not simulated.`, "pass");
     logLine(
       "x402Console",
       `[SETTLED] ${fmtNum(notional, 2, 6)} USDC recorded as simulated receipt #${receipt.id}. No on-chain transfer.`,
@@ -587,6 +599,9 @@ function resetSimulation() {
   const keepPolicy = session.treasury.policy;
   session = freshSession();
   session.treasury.policy = keepPolicy;
+  TAB_CONSOLES.forEach((id) => {
+    if ($(id) && id in initialConsoleHtml) $(id).innerHTML = initialConsoleHtml[id];
+  });
   setBadge("bchStatusBadge", "READY", "muted");
   setBadge("treasuryStatusBadge", "READY", "muted");
   setBadge("x402StatusBadge", "IDLE", "muted");
@@ -601,6 +616,9 @@ async function boot() {
   const versionBadge = $("appVersionBadge");
   if (versionBadge) versionBadge.textContent = `v${APP_VERSION}`;
 
+  TAB_CONSOLES.forEach((id) => {
+    if ($(id)) initialConsoleHtml[id] = $(id).innerHTML;
+  });
   initTabs();
   initPresets();
   initBchValidation();

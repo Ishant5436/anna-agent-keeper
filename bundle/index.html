@@ -141,7 +141,7 @@
               <div class="terminal-line info">[INIT] CashTokens Guard loaded with CHIP-2022-02 script prefix decoder.</div>
               <div class="terminal-line">[POLICY] Daily spending bound: <span data-bind="bchLimit">10.00</span> BCH per agent fleet (rolling 24h). This is the only BCH limit.</div>
               <div class="terminal-line">[POLICY] NFT capability: IMMUTABLE state commitment verification active.</div>
-              <div class="terminal-line">System ready for evaluation. Simulation only: no BCH transaction is broadcast.</div>
+              <div class="terminal-line terminal-placeholder">System ready for evaluation. Simulation only: no BCH transaction is broadcast.</div>
             </div>
           </div>
         </div>
@@ -197,7 +197,7 @@
               <div class="terminal-line info">[TREASURY] AgentKeeper programmable multi-chain vault initialized.</div>
               <div class="terminal-line">[POLICY] Zero-Contact Invariant: Unlisted recipients strictly rejected.</div>
               <div class="terminal-line">[POLICY] Per-tx cap $<span data-bind="treasuryTxCap">50.00</span> · rolling 24h cap $<span data-bind="treasuryDailyCap">250.00</span> USDC per agent. These are separate from the BCH covenant limit.</div>
-              <div class="terminal-line">[STATE] No simulated spends yet this session. "Test Spend" runs a dry run and records it in the session ledger only.</div>
+              <div class="terminal-line terminal-placeholder">[STATE] No simulated spends yet this session. "Test Spend" runs a dry run and records it in the session ledger only.</div>
             </div>
           </div>
         </div>
@@ -245,8 +245,8 @@
             </div>
             <div id="x402Console" class="terminal-box">
               <div class="terminal-line info">[x402] HTTP 402 Settlement Engine active.</div>
-              <div class="terminal-line">[ENGINE] secp256k1 signature validation + replay protection bound.</div>
-              <div class="terminal-line">Waiting for micropayment stream validation… No claims have been settled this session.</div>
+              <div class="terminal-line">[ENGINE] Replay protection: each claim needs a nonce greater than the last settled one. Signature checks are not simulated.</div>
+              <div class="terminal-line terminal-placeholder">Waiting for micropayment stream validation… No claims have been settled this session.</div>
             </div>
           </div>
         </div>
@@ -287,7 +287,7 @@
             <div id="userOpConsole" class="terminal-box">
               <div class="terminal-line info">[SIMULATOR] Pre-flight EVM call simulation armed.</div>
               <div class="terminal-line">[CHECK] Verification gas bounded at <span data-bind="gasBound">1,000,000</span> (Power of 10 Holzmann Invariants).</div>
-              <div class="terminal-line">Ready for pre-flight simulation. Nothing is sent to a bundler.</div>
+              <div class="terminal-line terminal-placeholder">Ready for pre-flight simulation. Nothing is sent to a bundler.</div>
             </div>
           </div>
         </div>

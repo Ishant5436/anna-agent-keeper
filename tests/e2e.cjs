@@ -23,6 +23,7 @@ const SDK_PATH = "/static/anna-apps/_sdk/latest/index.js";
 const MOCK_SDK = `
 export const AnnaAppRuntime = {
   async connect() {
+    await fetch("/__mock/delay"); // lets tests simulate a slow host connect
     const calls = (window.__annaCalls = window.__annaCalls || []);
     const call = async (ns, method, args) => {
       calls.push({ ns, method, args });
@@ -52,6 +53,9 @@ function startServer(state) {
       if (state.sdk !== "mock") return res.writeHead(404).end();
       res.writeHead(200, { "content-type": "text/javascript" });
       return res.end(MOCK_SDK);
+    }
+    if (url.pathname === "/__mock/delay") {
+      return setTimeout(() => res.writeHead(200).end("{}"), state.delayMs || 0);
     }
     if (url.pathname === "/__mock/storage") {
       if (req.method === "GET") {
@@ -202,6 +206,7 @@ async function standaloneFlow(browser, base) {
   // --- Autonomous Treasury ---
   await page.click("#btnSimulateTreasury");
   check("Test Spend $12.50 approved", (await text(page, "#treasuryStatusBadge")) === "SPEND APPROVED");
+  check("treasury 'no spends yet' line removed after a spend", !/No simulated spends yet/.test(await allLines(page, "treasuryConsole")));
   check("dashboard treasury usage $12.50", (await text(page, "#metricTreasurySub")).startsWith("$12.50 used"));
   await page.fill("#treasuryTestAmountInput", "60");
   await page.click("#btnSimulateTreasury");
@@ -218,6 +223,12 @@ async function standaloneFlow(browser, base) {
   await page.fill("#treasuryTestAmountInput", "8");
   await page.click("#btnSimulateTreasury");
   check("Test Spend over rolling 24h cap rejected", /would exceed the rolling 24h cap/.test(await lastLine(page, "treasuryConsole")));
+  await page.fill("#treasuryDailyCapInput", "12");
+  await page.fill("#treasuryTestAmountInput", "1");
+  await page.click("#btnSimulateTreasury");
+  const overLine = await lastLine(page, "treasuryConsole");
+  check("cap lowered below usage: remaining is $0.00, never negative", /\$0\.00 remaining/.test(overLine) && !/\$-/.test(overLine), overLine);
+  await page.fill("#treasuryDailyCapInput", "20");
   await page.fill("#treasuryTxCapInput", "30");
   check("tx cap above 24h cap flagged as invalid", (await text(page, "#treasuryStatusBadge")) === "POLICY INVALID");
   check("invalid edit does not change dashboard", (await text(page, "#metricTreasuryCap")) === "$20.00 USDC");
@@ -250,6 +261,9 @@ async function standaloneFlow(browser, base) {
   check("dashboard shows 1 settled", (await text(page, "#metricX402Value")) === "1 settled");
   c = await x402Consistent(page);
   check("[Issue 2] dashboard and receipt panel agree after settle", c.ok, c.detail);
+  const x402Text = await allLines(page, "x402Console");
+  check("[Issue 2] receipt panel no longer says 'No claims have been settled'", !/No claims have been settled/.test(x402Text), x402Text);
+  check("no unbacked 'Signature valid' claim", !/Signature valid/.test(await page.content()));
   await shot(page, "04-x402-settled");
 
   await page.click("#btnVerifyX402");
@@ -302,6 +316,10 @@ async function standaloneFlow(browser, base) {
   );
   check("Reset restores IDLE x402 badge", (await text(page, "#x402StatusBadge")) === "IDLE");
   check("Reset keeps saved treasury cap", (await text(page, "#metricTreasuryCap")) === "$20.00 USDC");
+  c = await x402Consistent(page);
+  check("[Issue 2] after reset, receipt panel shows no old receipts", c.ok && (await text(page, "#metricX402Value")) === "0 settled", c.detail);
+  check("after reset, receipt panel placeholder is back", /No claims have been settled/.test(await allLines(page, "x402Console")));
+  check("after reset, treasury console shows no old spends", !/\[APPROVED\]/.test(await allLines(page, "treasuryConsole")));
 
   // --- Anna minimum window size ---
   await page.setViewportSize({ width: 780, height: 540 });
@@ -371,6 +389,15 @@ async function hostFlow(browser, base, state) {
   await page.reload();
   await page.waitForFunction(() => /Loaded saved treasury limits from Anna/.test(document.getElementById("treasuryConsole").innerText));
   check("limits reload from Anna storage", (await text(page, "#metricTreasuryCap")) === "$300.00 USDC");
+
+  // Slow host connect: an edit made before saved limits load must not be overwritten.
+  state.delayMs = 1500;
+  await page.reload();
+  await page.click(".nav-tab[data-tab='tab-treasury']");
+  await page.fill("#treasuryDailyCapInput", "400");
+  await page.waitForFunction(() => /not applied, because the form was already edited/.test(document.getElementById("treasuryConsole").innerText));
+  state.delayMs = 0;
+  check("late storage load does not overwrite user edits", (await page.inputValue("#treasuryDailyCapInput")) === "400" && (await text(page, "#metricTreasuryCap")) === "$400.00 USDC");
   check("no JavaScript errors in host flow", errors.length === 0, errors.join(" | "));
   await context.close();
   state.sdk = "none";
