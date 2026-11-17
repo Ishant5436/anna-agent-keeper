@@ -185,6 +185,11 @@ async function standaloneFlow(browser, base) {
   await page.click("#btnValidateBch");
   check("BCH 0.1 blocked once the daily allowance is used up", /remaining daily allowance of 0\.00 BCH/.test(await allLines(page, "bchConsole")));
 
+  await page.fill("#bchSpendInput", "0.000000001");
+  await page.click("#btnValidateBch");
+  check("BCH amount below 1 satoshi is rejected, not verified", (await text(page, "#bchStatusBadge")) === "INVALID SPEND");
+  await page.fill("#bchSpendInput", "0.1");
+
   await page.fill("#bchCategoryInput", "xyz");
   await page.click("#btnValidateBch");
   check("invalid category rejected", (await text(page, "#bchStatusBadge")) === "INVALID CATEGORY");
@@ -193,6 +198,7 @@ async function standaloneFlow(browser, base) {
   await page.click("#btnResetSimulation");
   check("reset clears BCH usage", (await text(page, "#metricBchSub")).startsWith("0.00 BCH used"));
   await page.click("#presetBchNftState");
+  await page.fill("#bchAmountInput", "1e6");
   await page.click("#btnValidateBch");
   check("NFT-state preset validates", (await text(page, "#bchStatusBadge")) === "COVENANT VERIFIED");
   await page.click("#btnSyncBchToChat");
@@ -211,6 +217,9 @@ async function standaloneFlow(browser, base) {
   await page.fill("#treasuryTestAmountInput", "60");
   await page.click("#btnSimulateTreasury");
   check("Test Spend over per-tx cap rejected", /per-transaction cap of \$50\.00/.test(await lastLine(page, "treasuryConsole")));
+  await page.fill("#treasuryTestAmountInput", "0.0000001");
+  await page.click("#btnSimulateTreasury");
+  check("Test Spend below 0.000001 USDC is rejected, not approved", /at least 0\.000001 USDC/.test(await lastLine(page, "treasuryConsole")));
   await page.fill("#treasuryTestAmountInput", "5");
   await page.fill("#treasuryTestRecipientInput", "0x1111111111111111111111111111111111111111");
   await page.click("#btnSimulateTreasury");
@@ -256,8 +265,10 @@ async function standaloneFlow(browser, base) {
   let c = await x402Consistent(page);
   check("[Issue 2] dashboard and receipt panel agree before any claim", c.ok, c.detail);
 
+  check("[Issue 2] nonce hint does not claim a 'last settled' nonce before any settlement", /starting nonce floor 10001 \(no claims settled yet\)/.test(await text(page, "#x402NonceRef")));
   await page.click("#btnVerifyX402");
   check("Verify & Settle default claim settles", (await text(page, "#x402StatusBadge")) === "CLAIM SETTLED");
+  check("nonce hint names the settled nonce afterwards", (await text(page, "#x402NonceRef")) === "last settled nonce 14892");
   check("dashboard shows 1 settled", (await text(page, "#metricX402Value")) === "1 settled");
   c = await x402Consistent(page);
   check("[Issue 2] dashboard and receipt panel agree after settle", c.ok, c.detail);
@@ -270,6 +281,11 @@ async function standaloneFlow(browser, base) {
   check("same nonce again is blocked as replay", (await text(page, "#x402StatusBadge")) === "REPLAY ATTACK BLOCKED");
   check("replay does not add a settlement", (await text(page, "#metricX402Value")) === "1 settled");
   check("replay counted as rejected", /1 rejected/.test(await text(page, "#metricX402Sub")));
+
+  await page.fill("#x402NotionalInput", "0.0000001");
+  await page.fill("#x402NonceInput", "99999");
+  await page.click("#btnVerifyX402");
+  check("x402 claim below 0.000001 USDC is rejected, not settled", (await text(page, "#x402StatusBadge")) === "INVALID AMOUNT" && (await text(page, "#metricX402Value")) === "1 settled");
 
   await page.click("#presetX402Batch");
   await page.click("#btnVerifyX402");
@@ -320,6 +336,11 @@ async function standaloneFlow(browser, base) {
   check("[Issue 2] after reset, receipt panel shows no old receipts", c.ok && (await text(page, "#metricX402Value")) === "0 settled", c.detail);
   check("after reset, receipt panel placeholder is back", /No claims have been settled/.test(await allLines(page, "x402Console")));
   check("after reset, treasury console shows no old spends", !/\[APPROVED\]/.test(await allLines(page, "treasuryConsole")));
+  await page.click(".nav-tab[data-tab='tab-x402']");
+  await page.click("#presetX402Replay");
+  await page.click("#btnVerifyX402");
+  const replay0 = await allLines(page, "x402Console");
+  check("[Issue 2] replay block with 0 settled does not mention a 'last settled nonce'", /starting nonce floor 10001/.test(replay0) && !/last settled nonce/.test(replay0), replay0);
 
   // --- Anna minimum window size ---
   await page.setViewportSize({ width: 780, height: 540 });
@@ -404,6 +425,15 @@ async function hostFlow(browser, base, state) {
 }
 
 (async () => {
+  // The GitHub Pages copy must never drift from the Anna bundle.
+  const docsDir = path.join(__dirname, "..", "docs");
+  if (BUNDLE === path.join(__dirname, "..", "bundle") && fs.existsSync(docsDir)) {
+    const drift = ["index.html", "app.js", "style.css", "icon.svg"].filter(
+      (f) => !fs.readFileSync(path.join(BUNDLE, f)).equals(fs.readFileSync(path.join(docsDir, f)))
+    );
+    check("docs/ is identical to bundle/", drift.length === 0, `differs: ${drift.join(", ")}`);
+  }
+
   const state = { sdk: "none", kv: {} };
   const server = await startServer(state);
   const base = `http://127.0.0.1:${server.address().port}/`;

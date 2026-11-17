@@ -21,7 +21,7 @@
         </div>
       </div>
       <div class="header-actions">
-        <select id="networkSelect" class="network-pill" aria-label="Network context (simulated)">
+        <select autocomplete="off" id="networkSelect" class="network-pill" aria-label="Network context (simulated)">
           <option value="base-mainnet" selected>Base Mainnet (8453)</option>
           <option value="bch-chipnet">BCH Chipnet (CHIP-2022-02)</option>
           <option value="arc-mainnet">Circle Arc (5042)</option>
@@ -111,19 +111,19 @@
             </div>
             <div class="form-group">
               <label class="form-label" for="bchCategoryInput">Category ID (32 bytes hex)</label>
-              <input id="bchCategoryInput" class="form-input" value="9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08">
+              <input autocomplete="off" id="bchCategoryInput" class="form-input" value="9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08">
             </div>
             <div class="form-group">
               <label class="form-label" for="bchAmountInput">Token Amount (Units)</label>
-              <input id="bchAmountInput" class="form-input" type="number" min="0" step="1" value="1000000">
+              <input autocomplete="off" id="bchAmountInput" class="form-input" type="number" min="0" step="1" value="1000000">
             </div>
             <div class="form-group">
               <label class="form-label" for="bchCommitmentInput">NFT Commitment State (Hex)</label>
-              <input id="bchCommitmentInput" class="form-input" value="0100f2fe4facfe00">
+              <input autocomplete="off" id="bchCommitmentInput" class="form-input" value="0100f2fe4facfe00">
             </div>
             <div class="form-group">
               <label class="form-label" for="bchSpendInput">Withdrawal Spend Request (BCH)</label>
-              <input id="bchSpendInput" class="form-input" type="number" min="0" step="0.1" value="2.5">
+              <input autocomplete="off" id="bchSpendInput" class="form-input" type="number" min="0" step="0.1" value="2.5">
               <span class="form-hint">Checked against the covenant daily limit of <strong><span data-bind="bchLimit">10.00</span> BCH per agent fleet</strong> (rolling 24h). This is the limit shown on the dashboard. Each verified withdrawal uses part of it.</span>
             </div>
             <div class="btn-row">
@@ -158,28 +158,28 @@
             <p class="card-note">These caps apply to the agent's EVM treasury spends in USDC. They are separate from the BCH covenant limit, which applies only on the BCH CashTokens Guard tab.</p>
             <div class="form-group">
               <label class="form-label" for="treasuryAgentInput">Authorized Fleet Agent ID</label>
-              <input id="treasuryAgentInput" class="form-input" value="quant-executor-fleet-v6">
+              <input autocomplete="off" id="treasuryAgentInput" class="form-input" value="quant-executor-fleet-v6">
             </div>
             <div class="form-group">
               <label class="form-label" for="treasuryTxCapInput">Per-Transaction Hard Cap ($ / USDC)</label>
-              <input id="treasuryTxCapInput" class="form-input" type="number" min="0" step="0.01" value="50.0">
+              <input autocomplete="off" id="treasuryTxCapInput" class="form-input" type="number" min="0" step="0.01" value="50.0">
             </div>
             <div class="form-group">
               <label class="form-label" for="treasuryDailyCapInput">Rolling 24h Spend Cap ($ / USDC)</label>
-              <input id="treasuryDailyCapInput" class="form-input" type="number" min="0" step="0.01" value="250.0">
+              <input autocomplete="off" id="treasuryDailyCapInput" class="form-input" type="number" min="0" step="0.01" value="250.0">
             </div>
             <div class="form-group">
               <label class="form-label" for="treasuryWhitelistInput">Recipient Whitelist (Strict Enforce)</label>
-              <input id="treasuryWhitelistInput" class="form-input" value="0x4200000000000000000000000000000000000006, 0x833589fcd6edb6e08f4c7c32d4f71b54bda02913">
+              <input autocomplete="off" id="treasuryWhitelistInput" class="form-input" value="0x4200000000000000000000000000000000000006, 0x833589fcd6edb6e08f4c7c32d4f71b54bda02913">
             </div>
             <div class="form-split">
               <div class="form-group">
                 <label class="form-label" for="treasuryTestAmountInput">Test Spend Amount (USDC)</label>
-                <input id="treasuryTestAmountInput" class="form-input" type="number" min="0" step="0.01" value="12.50">
+                <input autocomplete="off" id="treasuryTestAmountInput" class="form-input" type="number" min="0" step="0.01" value="12.50">
               </div>
               <div class="form-group">
                 <label class="form-label" for="treasuryTestRecipientInput">Test Spend Recipient</label>
-                <input id="treasuryTestRecipientInput" class="form-input" value="0x4200000000000000000000000000000000000006">
+                <input autocomplete="off" id="treasuryTestRecipientInput" class="form-input" value="0x4200000000000000000000000000000000000006">
               </div>
             </div>
             <div class="btn-row">
@@ -221,16 +221,16 @@
             </div>
             <div class="form-group">
               <label class="form-label" for="x402ResourceInput">API Resource Target</label>
-              <input id="x402ResourceInput" class="form-input" value="https://api.deepseek.com/v1/chat/completions">
+              <input autocomplete="off" id="x402ResourceInput" class="form-input" value="https://api.deepseek.com/v1/chat/completions">
             </div>
             <div class="form-group">
               <label class="form-label" for="x402NotionalInput">Claim Notional (USDC)</label>
-              <input id="x402NotionalInput" class="form-input" type="number" min="0" step="0.0001" value="0.0025">
+              <input autocomplete="off" id="x402NotionalInput" class="form-input" type="number" min="0" step="0.0001" value="0.0025">
             </div>
             <div class="form-group">
               <label class="form-label" for="x402NonceInput">Signed Payment Nonce</label>
-              <input id="x402NonceInput" class="form-input" type="number" min="0" step="1" value="14892">
-              <span class="form-hint">Must be greater than the last settled nonce (<span id="x402LastNonceHint">10001</span>). A lower or equal nonce is rejected as a replay.</span>
+              <input autocomplete="off" id="x402NonceInput" class="form-input" type="number" min="0" step="1" value="14892">
+              <span class="form-hint">Must be greater than the <span id="x402NonceRef">starting nonce floor 10001 (no claims settled yet)</span>. A lower or equal nonce is rejected as a replay.</span>
             </div>
             <div class="btn-row">
               <button id="btnVerifyX402" class="btn-primary btn-grow">Verify & Settle x402 Claim</button>
@@ -262,15 +262,15 @@
             </div>
             <div class="form-group">
               <label class="form-label" for="userOpSenderInput">Sender Smart Account</label>
-              <input id="userOpSenderInput" class="form-input" value="0x742d35Cc6634C0532925a3b844Bc454e4438f44e">
+              <input autocomplete="off" id="userOpSenderInput" class="form-input" value="0x742d35Cc6634C0532925a3b844Bc454e4438f44e">
             </div>
             <div class="form-group">
               <label class="form-label" for="userOpDataInput">CallData Payload (Hex)</label>
-              <input id="userOpDataInput" class="form-input" value="0xa9059cbb000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda029130000000000000000000000000000000000000000000000000000000005f5e100">
+              <input autocomplete="off" id="userOpDataInput" class="form-input" value="0xa9059cbb000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda029130000000000000000000000000000000000000000000000000000000005f5e100">
             </div>
             <div class="form-group">
               <label class="form-label" for="userOpGasInput">Verification Gas Limit</label>
-              <input id="userOpGasInput" class="form-input" type="number" min="0" step="1" value="150000">
+              <input autocomplete="off" id="userOpGasInput" class="form-input" type="number" min="0" step="1" value="150000">
               <span class="form-hint">Safe bound: <span data-bind="gasBound">1,000,000</span> gas.</span>
             </div>
             <div class="btn-row">

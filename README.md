@@ -7,7 +7,7 @@ Autonomous Onchain AI Agent Treasury, Bitcoin Cash CashTokens (CHIP-2022-02) Cov
 AgentKeeper brings institutional-grade covenant security to autonomous AI agent fleets operating across EVM and UTXO networks:
 - **Bitcoin Cash CashTokens Guard (CHIP-2022-02):** Decodes CashTokens script prefixes, checks token category hashes, and enforces deterministic daily withdrawal allowances (OP_CHECKDATASIGVERIFY).
 - **Autonomous Treasury Management:** Enforces rolling 24-hour spending bounds and strictly whitelisted recipient routing to protect treasury capital against prompt injection or rogue agent behaviors.
-- **x402 Micropayment Stream Settlement:** High-throughput streaming settlement engine for automated agent-to-agent inference APIs with cryptographic receipt proofs and replay protection.
+- **x402 Micropayment Stream Settlement:** Simulates settlement of HTTP 402 payment claims for agent-to-agent inference APIs, with per-claim receipts and nonce-based replay protection.
 - **ERC-4337 Account Abstraction Simulation:** Pre-flight UserOp bundler validation and paymaster gas limit enforcement.
 - **Deterministic Safety Standards:** Built in compliance with Gerard J. Holzmann's Power of 10 Safety Invariants.
 
