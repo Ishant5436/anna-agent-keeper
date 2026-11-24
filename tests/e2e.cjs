@@ -186,7 +186,7 @@ async function x402Consistent(page) {
 }
 
 const VAULT = "0x1111111111111111111111111111111111111111";
-const RECIPIENT = "0x4200000000000000000000000000000000000006";
+const RECIPIENT = "0x2222222222222222222222222222222222222222";
 const SEPOLIA = "sepolia.base.org";
 
 const request = (page, id) => page.locator(`.request-item[data-request-id='${id}']`);
@@ -248,6 +248,13 @@ async function standaloneFlow(browser, base, chains) {
   chains[SEPOLIA].then[VAULT] = 100_000_000; // 100 USDC 24h ago
   chains[SEPOLIA].now[VAULT] = 100_000_000; // unchanged
   await page.fill("#vaultAddressInput", VAULT);
+  check("[Safety] the whitelist starts empty", (await page.inputValue("#vaultWhitelistInput")) === "");
+  await page.click("#btnSaveVault");
+  check("[Safety] a vault without whitelisted recipients is refused", /Whitelist needs at least one recipient/.test(await allLines(page, "vaultConsole")));
+  await page.fill("#vaultWhitelistInput", "0x036CbD53842c5426634e7929541eC2318f3dCF7e");
+  await page.click("#btnSaveVault");
+  check("[Safety] whitelisting the USDC contract itself is refused", /Whitelist cannot include the USDC token contract/.test(await allLines(page, "vaultConsole")));
+  await page.fill("#vaultWhitelistInput", RECIPIENT);
   await page.click("#btnSaveVault");
   check("vault saves to browser storage", await waitForText(page, "#vaultConsole", /Vault saved to this browser's storage/));
   check("saved badge names the network", (await text(page, "#vaultSetupBadge")) === "SAVED · BASE SEPOLIA");
@@ -354,11 +361,18 @@ async function standaloneFlow(browser, base, chains) {
 
   // --- Network switch ---
   await page.click(".nav-tab[data-tab='tab-vault']");
-  chains["mainnet.base.org"].now[VAULT] = 5_000_000;
-  chains["mainnet.base.org"].then[VAULT] = 5_000_000;
+  // On mainnet, 12.50 USDC leaves the vault: the same amount as the payment
+  // confirmed on Sepolia, which must not count for this vault.
+  chains["mainnet.base.org"].then[VAULT] = 20_000_000;
+  chains["mainnet.base.org"].now[VAULT] = 7_500_000;
   await page.selectOption("#vaultNetworkInput", "base");
   await page.click("#btnSaveVault");
-  check("[Live] switching to Base mainnet reads mainnet", await waitForText(page, "#monUsdc", /^5\.00 USDC$/) && chains["mainnet.base.org"].calls.length > 0);
+  check("[Live] switching to Base mainnet reads mainnet", await waitForText(page, "#monUsdc", /^7\.50 USDC$/) && chains["mainnet.base.org"].calls.length > 0);
+  check("[Scoping] a payment confirmed on Sepolia does not hide a mainnet outflow", await waitForText(page, "#monitorBadge", /UNAPPROVED OUTFLOW/) && (await text(page, "#monUnexplained")) === "12.50 USDC" && (await text(page, "#monVerifiedOut")) === "0.00 USDC");
+  check("[Scoping] the new vault's 24h cap starts empty", /^0\.00 committed · 0 awaiting approval/.test(await text(page, "#metricGuardSub")));
+  await page.click(".nav-tab[data-tab='tab-requests']");
+  check("[Scoping] old-vault requests are kept as history, without actions", /not the current vault/.test(await request(page, a).innerText()) && (await request(page, a).locator("button").count()) === 0);
+  await page.click(".nav-tab[data-tab='tab-vault']");
   check("explorer link switches to Basescan", (await page.getAttribute("#vaultExplorerLink", "href")) === `https://basescan.org/address/${VAULT}`);
 
   // --- Simulated tabs ---
@@ -419,6 +433,7 @@ async function mobileFlow(browser, base, chains) {
   await page.goto(base);
   await page.waitForFunction(() => !document.getElementById("btnSaveVault").disabled);
   await page.fill("#vaultAddressInput", VAULT);
+  await page.fill("#vaultWhitelistInput", RECIPIENT);
   await page.click("#btnSaveVault");
   await waitForText(page, "#monitorBadge", /ALERTS|OUTFLOW/);
   await page.click(".nav-tab[data-tab='tab-requests']");

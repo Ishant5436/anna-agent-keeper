@@ -133,7 +133,7 @@
             </div>
             <div class="form-group">
               <label class="form-label" for="vaultWhitelistInput">Recipient whitelist (comma-separated; anything else is blocked)</label>
-              <input autocomplete="off" id="vaultWhitelistInput" class="form-input" spellcheck="false" value="0x4200000000000000000000000000000000000006, 0x833589fcd6edb6e08f4c7c32d4f71b54bda02913">
+              <input autocomplete="off" id="vaultWhitelistInput" class="form-input" spellcheck="false" placeholder="0x… addresses your agent may pay">
             </div>
             <div class="btn-row">
               <button id="btnSaveVault" class="btn-primary btn-grow" disabled>Save vault</button>
@@ -176,7 +176,7 @@
             <p class="card-note">Submit what your agent wants to pay. The guard approves it, holds it for your approval, or blocks it, using the vault's saved policy and the rolling 24-hour total.</p>
             <div class="form-group">
               <label class="form-label" for="reqRecipientInput">Recipient address</label>
-              <input autocomplete="off" id="reqRecipientInput" class="form-input" spellcheck="false" value="0x4200000000000000000000000000000000000006">
+              <input autocomplete="off" id="reqRecipientInput" class="form-input" spellcheck="false" placeholder="0x… (must be on the vault whitelist)">
             </div>
             <div class="form-split">
               <div class="form-group">

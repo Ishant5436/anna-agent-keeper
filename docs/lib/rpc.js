@@ -6,7 +6,7 @@
  * given block, and transaction receipts.
  */
 
-import { DAY_MS, matchTransferInReceipt, assessOutflow } from "./vault.js";
+import { DAY_MS, NETWORKS, matchTransferInReceipt, assessOutflow } from "./vault.js";
 
 let rpcId = 0;
 
@@ -60,20 +60,23 @@ export async function blockAtTime(net, latest, targetSec) {
 }
 
 /** Reads the vault's balances now and 24h ago, and checks for unapproved outflow. */
-export async function monitorVault(net, vaultAddress, requests) {
+export async function monitorVault(cfg, requests) {
+  const net = NETWORKS[cfg.network];
+  const vaultAddress = cfg.vaultAddress;
   const latest = await getBlock(net, "latest");
   const usdcNow = await usdcBalanceMicro(net, vaultAddress, latest.number);
   const ethWei = BigInt(await rpcCall(net, "eth_getBalance", [vaultAddress, hex(latest.number)]));
   const then = await blockAtTime(net, latest, latest.timestamp - DAY_MS / 1000);
   const usdcThen = await usdcBalanceMicro(net, vaultAddress, then.number);
-  const assessment = assessOutflow({ balanceNowMicro: usdcNow, balanceThenMicro: usdcThen, thenBlock: then.number, requests });
+  const assessment = assessOutflow({ balanceNowMicro: usdcNow, balanceThenMicro: usdcThen, thenBlock: then.number, requests, cfg });
   return { latest, then, usdcNow, usdcThen, ethWei, ...assessment };
 }
 
-/** Fetches a receipt and checks it contains the approved transfer. */
-export async function verifyPayment(net, txHash, expected) {
+/** Fetches a receipt and checks it contains the request's approved transfer. */
+export async function verifyPayment(request, txHash) {
+  const net = NETWORKS[request.network];
   const receipt = await rpcCall(net, "eth_getTransactionReceipt", [txHash]);
-  return matchTransferInReceipt(receipt, { usdc: net.usdc, ...expected });
+  return matchTransferInReceipt(receipt, { usdc: net.usdc, from: request.vault, to: request.recipient, amountMicro: request.amountMicro });
 }
 
 export function formatEth(wei) {

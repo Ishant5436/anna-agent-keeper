@@ -76,11 +76,21 @@ export function defaultConfig() {
     txCapMicro: 50 * MICRO,
     dailyCapMicro: 250 * MICRO,
     approvalThresholdMicro: 25 * MICRO,
-    whitelist: [
-      "0x4200000000000000000000000000000000000006",
-      "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
-    ],
+    whitelist: [], // the user adds their own recipients
   };
+}
+
+/** True when a request was made for this vault (same network and address). */
+export function belongsTo(request, cfg) {
+  return request.network === cfg.network && sameAddress(request.vault, cfg.vaultAddress);
+}
+
+/** Recipients that can never be paid: the USDC contract itself and the vault. */
+function forbiddenRecipient(cfg, address) {
+  const net = NETWORKS[cfg.network];
+  if (net && sameAddress(address, net.usdc)) return "the USDC token contract (tokens sent there are lost)";
+  if (sameAddress(address, cfg.vaultAddress)) return "the vault itself";
+  return null;
 }
 
 /** Returns a list of problems with a vault config (empty when valid). */
@@ -100,18 +110,25 @@ export function validateConfig(cfg) {
     if (cfg.approvalThresholdMicro > cfg.txCapMicro)
       errors.push("Approval threshold cannot be larger than the per-transaction cap.");
   }
-  if (!Array.isArray(cfg.whitelist) || cfg.whitelist.length === 0) errors.push("Whitelist needs at least one address.");
+  if (!Array.isArray(cfg.whitelist) || cfg.whitelist.length === 0) errors.push("Whitelist needs at least one recipient address.");
   else {
     const bad = cfg.whitelist.find((a) => !isAddress(a));
     if (bad) errors.push(`Whitelist entry is not a valid address: ${bad}`);
+    else {
+      const forbidden = cfg.whitelist.map((a) => [a, forbiddenRecipient(cfg, a)]).find(([, why]) => why);
+      if (forbidden) errors.push(`Whitelist cannot include ${forbidden[1]}: ${forbidden[0]}`);
+    }
   }
   return errors;
 }
 
-/** USDC committed in the rolling 24h window: pending + approved + sent + verified. */
-export function committedMicro(requests, now, excludeId = null) {
+/**
+ * USDC committed in the rolling 24h window for this vault:
+ * pending + approved + sent + verified. Other vaults' requests never count.
+ */
+export function committedMicro(requests, cfg, now, excludeId = null) {
   return requests
-    .filter((r) => r.id !== excludeId && COMMITTED.has(r.status))
+    .filter((r) => belongsTo(r, cfg) && r.id !== excludeId && COMMITTED.has(r.status))
     .filter((r) => r.status === STATUS.PENDING || now - (r.decidedAt ?? r.createdAt) < DAY_MS)
     .reduce((sum, r) => sum + r.amountMicro, 0);
 }
@@ -124,6 +141,8 @@ export function evaluateRequest(cfg, requests, { recipient, amountMicro }, now, 
   const configErrors = validateConfig(cfg);
   if (configErrors.length) return { decision: STATUS.BLOCKED, reason: `Vault is not set up: ${configErrors[0]}` };
   if (!isAddress(recipient)) return { decision: STATUS.BLOCKED, reason: "Recipient is not a valid address." };
+  const forbidden = forbiddenRecipient(cfg, recipient);
+  if (forbidden) return { decision: STATUS.BLOCKED, reason: `Recipient is ${forbidden}.` };
   if (!cfg.whitelist.some((a) => sameAddress(a, recipient)))
     return { decision: STATUS.BLOCKED, reason: "Recipient is not on the vault whitelist." };
   if (!Number.isSafeInteger(amountMicro) || amountMicro < 1)
@@ -133,7 +152,7 @@ export function evaluateRequest(cfg, requests, { recipient, amountMicro }, now, 
       decision: STATUS.BLOCKED,
       reason: `${formatUsdc(amountMicro)} USDC is over the per-transaction cap of ${formatUsdc(cfg.txCapMicro)} USDC.`,
     };
-  const used = committedMicro(requests, now, excludeId);
+  const used = committedMicro(requests, cfg, now, excludeId);
   if (used + amountMicro > cfg.dailyCapMicro) {
     const left = Math.max(0, cfg.dailyCapMicro - used);
     return {
@@ -158,15 +177,15 @@ export function decidePendingApproval(cfg, requests, request, now) {
 
 const pad32 = (hexNoPrefix) => hexNoPrefix.toLowerCase().padStart(64, "0");
 
-/** The exact USDC transfer the user sends from their own wallet. */
-export function paymentFor(cfg, request) {
-  const net = NETWORKS[cfg.network];
+/** The exact USDC transfer the user sends, from the vault the request was made for. */
+export function paymentFor(request) {
+  const net = NETWORKS[request.network];
   const amount = BigInt(request.amountMicro);
   const data = `0x${TRANSFER_SELECTOR}${pad32(request.recipient.slice(2))}${pad32(amount.toString(16))}`;
   return {
     network: net.label,
     chainId: net.chainId,
-    from: cfg.vaultAddress,
+    from: request.vault,
     to: net.usdc, // the USDC contract
     value: "0",
     data,
@@ -203,10 +222,10 @@ export function matchTransferInReceipt(receipt, { usdc, from, to, amountMicro })
  * that were confirmed on-chain in the same window. Incoming funds can hide
  * outgoing ones, so a clean result is a lower bound, not proof.
  */
-export function assessOutflow({ balanceNowMicro, balanceThenMicro, thenBlock, requests }) {
+export function assessOutflow({ balanceNowMicro, balanceThenMicro, thenBlock, requests, cfg }) {
   const netOutMicro = balanceThenMicro - balanceNowMicro; // > 0 means the vault lost USDC
   const verifiedOutMicro = requests
-    .filter((r) => r.status === STATUS.VERIFIED && Number.isFinite(r.blockNumber) && r.blockNumber > thenBlock)
+    .filter((r) => belongsTo(r, cfg) && r.status === STATUS.VERIFIED && Number.isFinite(r.blockNumber) && r.blockNumber > thenBlock)
     .reduce((s, r) => s + r.amountMicro, 0);
   const unexplainedMicro = Math.max(0, netOutMicro - verifiedOutMicro);
   return { netOutMicro, verifiedOutMicro, unexplainedMicro, alert: unexplainedMicro > 0 };
@@ -229,6 +248,11 @@ export function normalizeVaultDoc(raw) {
   if (raw.version === 2 && raw.config) {
     doc.config = { ...doc.config, ...raw.config };
     doc.requests = Array.isArray(raw.requests) ? raw.requests.filter((r) => r && typeof r.id === "string") : [];
+    // Requests saved before they carried their vault belong to the saved one.
+    for (const r of doc.requests) {
+      if (!r.network) r.network = doc.config.network;
+      if (!r.vault) r.vault = doc.config.vaultAddress;
+    }
     return doc;
   }
   // v1.0.1 shape: { agent, txCapUsdc, dailyCapUsdc, whitelist }

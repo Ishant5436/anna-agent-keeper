@@ -42,7 +42,8 @@ function findRecentTransfer() {
       const from = `0x${l.topics[1].slice(26)}`;
       const to = `0x${l.topics[2].slice(26)}`;
       const amount = BigInt(l.data);
-      if (amount > 0n && amount <= 10n ** 15n && BigInt(from) && BigInt(to) && from !== to)
+      const usdcAddr = USDC.toLowerCase();
+      if (amount > 0n && amount <= 10n ** 15n && BigInt(from) && BigInt(to) && from !== to && from !== usdcAddr && to !== usdcAddr)
         return { tx: l.transactionHash, from, to, amountMicro: Number(amount), block: Number(BigInt(l.blockNumber)) };
     }
   }

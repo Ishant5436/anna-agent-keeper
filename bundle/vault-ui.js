@@ -11,7 +11,7 @@
 import {
   NETWORKS, STATUS, DAY_MS, isAddress, isTxHash, shortAddress, parseUsdc, formatUsdc,
   validateConfig, evaluateRequest, decidePendingApproval, committedMicro, paymentFor,
-  newRequestId, normalizeVaultDoc,
+  newRequestId, normalizeVaultDoc, belongsTo,
 } from "./lib/vault.js";
 import { monitorVault, verifyPayment, formatEth } from "./lib/rpc.js";
 
@@ -53,7 +53,8 @@ export function initVaultUI({ logLine, setBadge, dispatchToChat, getAnna }) {
   const net = () => NETWORKS[doc.config.network];
   const configured = () => validateConfig(doc.config).length === 0;
   const explorerAddress = (a) => `${net().explorer}/address/${a}`;
-  const explorerTx = (h) => `${net().explorer}/tx/${h}`;
+  const explorerTx = (r) => `${NETWORKS[r.network].explorer}/tx/${r.txHash}`;
+  const isOpen = (r) => [STATUS.PENDING, STATUS.APPROVED, STATUS.SENT].includes(r.status);
 
   // ---------- Persistence ----------
   async function readStored(key) {
@@ -133,8 +134,8 @@ export function initVaultUI({ logLine, setBadge, dispatchToChat, getAnna }) {
       return;
     }
     const moved = config.network !== doc.config.network || config.vaultAddress.toLowerCase() !== doc.config.vaultAddress.toLowerCase();
-    if (moved && doc.requests.some((r) => r.status === STATUS.APPROVED || r.status === STATUS.SENT)) {
-      logLine("vaultConsole", "[SETUP] Finish or cancel approved payments before changing the vault address or network.", "fail");
+    if (moved && doc.requests.some((r) => belongsTo(r, doc.config) && isOpen(r))) {
+      logLine("vaultConsole", "[SETUP] Finish, deny or cancel this vault's open requests (awaiting approval, approved or sent) before changing the vault address or network.", "fail");
       return;
     }
     doc.config = config;
@@ -153,7 +154,7 @@ export function initVaultUI({ logLine, setBadge, dispatchToChat, getAnna }) {
     $("btnCheckVault").disabled = true;
     const c = doc.config;
     try {
-      const r = await monitorVault(net(), c.vaultAddress, doc.requests);
+      const r = await monitorVault(c, doc.requests);
       if (c !== doc.config) return; // vault changed mid-check
       lastCheck = { ...r, at: Date.now() };
       logLine(
@@ -191,6 +192,8 @@ export function initVaultUI({ logLine, setBadge, dispatchToChat, getAnna }) {
       id: newRequestId(now),
       createdAt: now,
       agent: doc.config.agent,
+      network: doc.config.network,
+      vault: doc.config.vaultAddress,
       recipient,
       amountMicro,
       memo,
@@ -216,7 +219,7 @@ export function initVaultUI({ logLine, setBadge, dispatchToChat, getAnna }) {
 
   async function approve(id) {
     const r = findRequest(id);
-    if (!r || r.status !== STATUS.PENDING) return;
+    if (!r || r.status !== STATUS.PENDING || !belongsTo(r, doc.config)) return;
     const res = decidePendingApproval(doc.config, doc.requests, r, Date.now());
     r.status = res.decision;
     r.reason = res.reason;
@@ -239,7 +242,8 @@ export function initVaultUI({ logLine, setBadge, dispatchToChat, getAnna }) {
 
   async function confirmPayment(id, txHash) {
     const r = findRequest(id);
-    if (!r) return;
+    if (!r || !belongsTo(r, doc.config)) return;
+    const rNet = NETWORKS[r.network];
     if (r.status === STATUS.APPROVED) {
       if (!isTxHash(txHash)) {
         r.verifyNote = "Transaction hash must be 0x followed by 64 hex characters.";
@@ -261,7 +265,7 @@ export function initVaultUI({ logLine, setBadge, dispatchToChat, getAnna }) {
     r.verifyNote = "Checking on-chain…";
     render();
     try {
-      const res = await verifyPayment(net(), r.txHash, { from: doc.config.vaultAddress, to: r.recipient, amountMicro: r.amountMicro });
+      const res = await verifyPayment(r, r.txHash);
       if (res.ok) {
         r.status = STATUS.VERIFIED;
         r.blockNumber = res.blockNumber;
@@ -279,7 +283,7 @@ export function initVaultUI({ logLine, setBadge, dispatchToChat, getAnna }) {
         logLine("requestConsole", `[ON-CHAIN] Not confirmed: ${res.reason}`, "fail");
       }
     } catch (e) {
-      r.verifyNote = `Could not reach ${net().label}: ${e.message}`;
+      r.verifyNote = `Could not reach ${rNet.label}: ${e.message}`;
       logLine("requestConsole", `[ON-CHAIN] ${r.verifyNote}`, "fail");
     }
     await persist();
@@ -301,12 +305,13 @@ export function initVaultUI({ logLine, setBadge, dispatchToChat, getAnna }) {
   async function sendReport() {
     const c = doc.config;
     const now = Date.now();
-    const pending = doc.requests.filter((r) => r.status === STATUS.PENDING).length;
+    const mine = doc.requests.filter((r) => belongsTo(r, c));
+    const pending = mine.filter((r) => r.status === STATUS.PENDING).length;
     const lines = [
       "[AgentKeeper Vault Report]",
       configured() ? `- Vault: ${c.vaultAddress} on ${net().label}` : "- Vault: not set up yet",
       `- Policy: ${formatUsdc(c.txCapMicro)} USDC per tx, ${formatUsdc(c.dailyCapMicro)} USDC rolling 24h, approval needed above ${formatUsdc(c.approvalThresholdMicro)} USDC, ${c.whitelist.length} whitelisted recipient(s)`,
-      `- Last 24h: ${formatUsdc(committedMicro(doc.requests, now))} USDC committed, ${pending} awaiting approval`,
+      `- Last 24h: ${formatUsdc(committedMicro(doc.requests, c, now))} USDC committed, ${pending} awaiting approval`,
     ];
     if (lastCheck && !lastCheck.error)
       lines.push(
@@ -314,9 +319,9 @@ export function initVaultUI({ logLine, setBadge, dispatchToChat, getAnna }) {
       );
     else lines.push("- Live check: not run yet");
     // Open items first, then payments confirmed in the 24h window.
-    const open = doc.requests.filter((r) => [STATUS.PENDING, STATUS.APPROVED, STATUS.SENT].includes(r.status));
-    const confirmed = doc.requests.filter((r) => r.status === STATUS.VERIFIED && now - r.decidedAt < DAY_MS);
-    const refused = doc.requests.filter((r) => [STATUS.BLOCKED, STATUS.DENIED].includes(r.status)).length;
+    const open = mine.filter(isOpen);
+    const confirmed = mine.filter((r) => r.status === STATUS.VERIFIED && now - r.decidedAt < DAY_MS);
+    const refused = mine.filter((r) => [STATUS.BLOCKED, STATUS.DENIED].includes(r.status)).length;
     for (const r of [...open, ...confirmed].slice(0, 10))
       lines.push(`- ${formatUsdc(r.amountMicro)} USDC → ${r.recipient}: ${STATUS_LABEL[r.status][0]}${r.txHash ? ` (tx ${r.txHash})` : ""}${r.memo ? ` [${r.memo}]` : ""}`);
     if (refused) lines.push(`- ${refused} request(s) blocked or denied`);
@@ -358,15 +363,18 @@ export function initVaultUI({ logLine, setBadge, dispatchToChat, getAnna }) {
       el("div", { class: "request-reason", text: r.reason })
     );
     const actions = el("div", { class: "btn-row request-actions" });
+    const current = belongsTo(r, doc.config);
+    if (!current)
+      item.append(el("div", { class: "request-note", text: `For vault ${shortAddress(r.vault)} on ${NETWORKS[r.network]?.label || r.network}, not the current vault. Kept as history; it does not count toward this vault's cap.` }));
 
-    if (r.status === STATUS.PENDING) {
+    if (current && r.status === STATUS.PENDING) {
       actions.append(
         el("button", { class: "btn-primary btn-compact", type: "button", text: "Approve", onclick: () => approve(r.id) }),
         el("button", { class: "btn-secondary btn-compact", type: "button", text: "Deny", onclick: () => setStatus(r.id, STATUS.DENIED, "Denied by you.") })
       );
     }
-    if (r.status === STATUS.APPROVED) {
-      const p = paymentFor(doc.config, r);
+    if (current && r.status === STATUS.APPROVED) {
+      const p = paymentFor(r);
       item.append(
         el("div", { class: "pay-box" },
           el("p", { class: "form-hint", text: `Send this from your vault wallet (${shortAddress(p.from)}) on ${p.network}. It is a USDC transfer: value 0, sent to the USDC contract with this data.` }),
@@ -382,11 +390,11 @@ export function initVaultUI({ logLine, setBadge, dispatchToChat, getAnna }) {
         el("button", { class: "btn-secondary btn-compact", type: "button", text: "Cancel", onclick: () => setStatus(r.id, STATUS.CANCELLED, "Cancelled before sending.") })
       );
     }
-    if (r.status === STATUS.SENT) {
+    if (current && r.status === STATUS.SENT) {
       actions.append(el("button", { class: "btn-primary btn-compact", type: "button", text: "Check again", onclick: () => confirmPayment(r.id) }));
     }
     if (r.txHash) {
-      const link = el("a", { class: "request-link", href: explorerTx(r.txHash), target: "_blank", rel: "noopener noreferrer", text: `tx ${shortAddress(r.txHash)}` });
+      const link = el("a", { class: "request-link", href: explorerTx(r), target: "_blank", rel: "noopener noreferrer", text: `tx ${shortAddress(r.txHash)}` });
       item.append(el("div", { class: "request-meta" }, link, r.blockNumber ? ` · block ${r.blockNumber}` : ""));
     }
     if (r.verifyNote) item.append(el("div", { class: `request-note ${r.status === STATUS.VERIFIED ? "ok" : ""}`, text: r.verifyNote }));
@@ -428,9 +436,9 @@ export function initVaultUI({ logLine, setBadge, dispatchToChat, getAnna }) {
 
     // Dashboard cards
     const now = Date.now();
-    const pending = doc.requests.filter((r) => r.status === STATUS.PENDING).length;
+    const pending = doc.requests.filter((r) => belongsTo(r, c) && r.status === STATUS.PENDING).length;
     $("metricGuardCap").textContent = `${formatUsdc(c.dailyCapMicro)} USDC`;
-    $("metricGuardSub").textContent = `${formatUsdc(committedMicro(doc.requests, now))} committed · ${pending} awaiting approval`;
+    $("metricGuardSub").textContent = `${formatUsdc(committedMicro(doc.requests, c, now))} committed · ${pending} awaiting approval`;
     const navCount = $("navPendingCount");
     navCount.hidden = pending === 0;
     navCount.textContent = String(pending);

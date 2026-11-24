@@ -6,7 +6,7 @@ import { encodeTokenPrefix, compactSize } from "../bundle/lib/cashtokens.js";
 import {
   STATUS, DAY_MS, NETWORKS, TRANSFER_TOPIC,
   parseUsdc, formatUsdc, defaultConfig, validateConfig, evaluateRequest, decidePendingApproval,
-  committedMicro, paymentFor, matchTransferInReceipt, assessOutflow, normalizeVaultDoc,
+  committedMicro, paymentFor, matchTransferInReceipt, assessOutflow, normalizeVaultDoc, belongsTo,
 } from "../bundle/lib/vault.js";
 
 let passed = 0;
@@ -58,11 +58,14 @@ test("parseUsdc: exact micro-units, rejects >6 decimals and junk", () => {
 
 // ---------- Policy ----------
 const VAULT = "0x1111111111111111111111111111111111111111";
-const OK_TO = "0x4200000000000000000000000000000000000006";
-const cfg = { ...defaultConfig(), vaultAddress: VAULT };
+const OK_TO = "0x2222222222222222222222222222222222222222";
+const cfg = { ...defaultConfig(), vaultAddress: VAULT, whitelist: [OK_TO] };
 const NOW = 1_800_000_000_000;
+// Requests carry the vault and network they were made for.
+const mine = (r) => ({ network: cfg.network, vault: VAULT, recipient: OK_TO, ...r });
 
-test("config: default plus a vault address is valid; bad settings are reported", () => {
+test("config: defaults need a vault and a whitelist; then valid; bad settings are reported", () => {
+  assert.ok(validateConfig({ ...defaultConfig(), vaultAddress: VAULT }).some((e) => /Whitelist needs/.test(e)));
   assert.deepEqual(validateConfig(cfg), []);
   assert.match(validateConfig({ ...cfg, vaultAddress: "" })[0], /Vault address/);
   assert.ok(validateConfig({ ...cfg, txCapMicro: cfg.dailyCapMicro + 1 }).some((e) => /larger than the rolling/.test(e)));
@@ -74,22 +77,31 @@ test("guard: small whitelisted payment is approved automatically", () => {
 test("guard: above approval threshold waits for a human", () => {
   assert.equal(evaluateRequest(cfg, [], { recipient: OK_TO, amountMicro: 30e6 }, NOW).decision, STATUS.PENDING);
 });
+test("guard: never pays the USDC contract or the vault itself, even if whitelisted", () => {
+  const usdcAddr = NETWORKS[cfg.network].usdc;
+  assert.match(validateConfig({ ...cfg, whitelist: [usdcAddr] })[0], /USDC token contract/);
+  assert.match(validateConfig({ ...cfg, whitelist: [VAULT] })[0], /vault itself/);
+  const loose = { ...cfg, whitelist: [usdcAddr.toLowerCase()] }; // e.g. a stale saved config
+  assert.match(evaluateRequest(loose, [], { recipient: usdcAddr, amountMicro: 1e6 }, NOW).reason, /USDC token contract/);
+});
 test("guard: blocks non-whitelisted recipient, over-cap amount, and an unset vault", () => {
-  assert.match(evaluateRequest(cfg, [], { recipient: VAULT, amountMicro: 1e6 }, NOW).reason, /whitelist/);
+  assert.match(evaluateRequest(cfg, [], { recipient: "0x3333333333333333333333333333333333333333", amountMicro: 1e6 }, NOW).reason, /whitelist/);
   assert.match(evaluateRequest(cfg, [], { recipient: OK_TO, amountMicro: 51e6 }, NOW).reason, /per-transaction cap/);
   assert.match(evaluateRequest(defaultConfig(), [], { recipient: OK_TO, amountMicro: 1e6 }, NOW).reason, /not set up/);
 });
 test("guard: rolling 24h cap counts pending + approved + sent + verified, not blocked/denied/old", () => {
   const reqs = [
-    { id: "a", status: STATUS.VERIFIED, amountMicro: 50e6, createdAt: NOW - 1000, decidedAt: NOW - 1000 },
-    { id: "b", status: STATUS.PENDING, amountMicro: 40e6, createdAt: NOW - 1000 },
-    { id: "c", status: STATUS.APPROVED, amountMicro: 50e6, createdAt: NOW - 1000, decidedAt: NOW - 1000 },
-    { id: "d", status: STATUS.SENT, amountMicro: 50e6, createdAt: NOW - 1000, decidedAt: NOW - 1000 },
-    { id: "e", status: STATUS.BLOCKED, amountMicro: 50e6, createdAt: NOW, decidedAt: NOW },
-    { id: "f", status: STATUS.DENIED, amountMicro: 50e6, createdAt: NOW, decidedAt: NOW },
-    { id: "g", status: STATUS.VERIFIED, amountMicro: 50e6, createdAt: NOW - DAY_MS - 1, decidedAt: NOW - DAY_MS - 1 },
+    mine({ id: "a", status: STATUS.VERIFIED, amountMicro: 50e6, createdAt: NOW - 1000, decidedAt: NOW - 1000 }),
+    mine({ id: "b", status: STATUS.PENDING, amountMicro: 40e6, createdAt: NOW - 1000 }),
+    mine({ id: "c", status: STATUS.APPROVED, amountMicro: 50e6, createdAt: NOW - 1000, decidedAt: NOW - 1000 }),
+    mine({ id: "d", status: STATUS.SENT, amountMicro: 50e6, createdAt: NOW - 1000, decidedAt: NOW - 1000 }),
+    mine({ id: "e", status: STATUS.BLOCKED, amountMicro: 50e6, createdAt: NOW, decidedAt: NOW }),
+    mine({ id: "f", status: STATUS.DENIED, amountMicro: 50e6, createdAt: NOW, decidedAt: NOW }),
+    mine({ id: "g", status: STATUS.VERIFIED, amountMicro: 50e6, createdAt: NOW - DAY_MS - 1, decidedAt: NOW - DAY_MS - 1 }),
+    mine({ id: "h", status: STATUS.VERIFIED, amountMicro: 50e6, createdAt: NOW, decidedAt: NOW, network: "base" }), // other network
+    mine({ id: "i", status: STATUS.APPROVED, amountMicro: 50e6, createdAt: NOW, decidedAt: NOW, vault: OK_TO }), // other vault
   ];
-  assert.equal(committedMicro(reqs, NOW), 190e6);
+  assert.equal(committedMicro(reqs, cfg, NOW), 190e6);
   const tight = { ...cfg, dailyCapMicro: 230e6 };
   const r = evaluateRequest(tight, reqs, { recipient: OK_TO, amountMicro: 50e6 }, NOW);
   assert.equal(r.decision, STATUS.BLOCKED);
@@ -97,8 +109,8 @@ test("guard: rolling 24h cap counts pending + approved + sent + verified, not bl
   assert.equal(evaluateRequest(cfg, reqs, { recipient: OK_TO, amountMicro: 20e6 }, NOW).decision, STATUS.APPROVED);
 });
 test("guard: approving a pending request re-checks the cap without double-counting itself", () => {
-  const pending = { id: "p", status: STATUS.PENDING, recipient: OK_TO, amountMicro: 40e6, createdAt: NOW };
-  const others = [{ id: "v", status: STATUS.VERIFIED, amountMicro: 200e6, createdAt: NOW, decidedAt: NOW }];
+  const pending = mine({ id: "p", status: STATUS.PENDING, amountMicro: 40e6, createdAt: NOW });
+  const others = [mine({ id: "v", status: STATUS.VERIFIED, amountMicro: 200e6, createdAt: NOW, decidedAt: NOW })];
   assert.equal(decidePendingApproval(cfg, [...others, pending], pending, NOW).decision, STATUS.APPROVED);
   const tighter = { ...cfg, dailyCapMicro: 220e6 };
   assert.equal(decidePendingApproval(tighter, [...others, pending], pending, NOW).decision, STATUS.BLOCKED);
@@ -106,7 +118,8 @@ test("guard: approving a pending request re-checks the cap without double-counti
 
 // ---------- Payment + verification ----------
 test("payment: ERC-20 transfer calldata and EIP-681 link are exact", () => {
-  const p = paymentFor({ ...cfg, network: "base" }, { recipient: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", amountMicro: 100_000_000 });
+  const p = paymentFor({ network: "base", vault: VAULT, recipient: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", amountMicro: 100_000_000 });
+  assert.equal(p.from, VAULT);
   // Same calldata as a hand-checked transfer(0x8335…2913, 100 USDC).
   assert.equal(p.data, "0xa9059cbb000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda029130000000000000000000000000000000000000000000000000000000005f5e100");
   assert.equal(p.to, NETWORKS.base.usdc);
@@ -142,16 +155,24 @@ test("verify: missing, reverted, wrong sender/recipient/amount/token are all ref
 // ---------- Monitoring ----------
 test("monitor: flags outflow beyond verified payments in the window", () => {
   const reqs = [
-    { id: "v1", status: STATUS.VERIFIED, amountMicro: 10e6, blockNumber: 150 },
-    { id: "v0", status: STATUS.VERIFIED, amountMicro: 99e6, blockNumber: 50 }, // before the window
+    mine({ id: "v1", status: STATUS.VERIFIED, amountMicro: 10e6, blockNumber: 150 }),
+    mine({ id: "v0", status: STATUS.VERIFIED, amountMicro: 99e6, blockNumber: 50 }), // before the window
+    mine({ id: "vx", status: STATUS.VERIFIED, amountMicro: 30e6, blockNumber: 999, network: "base" }), // other chain
   ];
-  const a = assessOutflow({ balanceNowMicro: 70e6, balanceThenMicro: 100e6, thenBlock: 100, requests: reqs });
+  const a = assessOutflow({ balanceNowMicro: 70e6, balanceThenMicro: 100e6, thenBlock: 100, requests: reqs, cfg });
   assert.equal(a.netOutMicro, 30e6);
   assert.equal(a.verifiedOutMicro, 10e6);
   assert.equal(a.unexplainedMicro, 20e6);
   assert.equal(a.alert, true);
-  const clean = assessOutflow({ balanceNowMicro: 90e6, balanceThenMicro: 100e6, thenBlock: 100, requests: reqs });
+  const clean = assessOutflow({ balanceNowMicro: 90e6, balanceThenMicro: 100e6, thenBlock: 100, requests: reqs, cfg });
   assert.equal(clean.alert, false);
+});
+
+test("vault scoping: requests belong to one network and vault address", () => {
+  assert.equal(belongsTo(mine({}), cfg), true);
+  assert.equal(belongsTo(mine({ vault: VAULT.toUpperCase().replace("0X", "0x") }), cfg), true);
+  assert.equal(belongsTo(mine({ network: "base" }), cfg), false);
+  assert.equal(belongsTo(mine({ vault: OK_TO }), cfg), false);
 });
 
 // ---------- Storage ----------

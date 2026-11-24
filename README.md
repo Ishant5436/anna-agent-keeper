@@ -25,6 +25,7 @@ Every tab and dashboard card in the app carries a **LIVE** or **SIMULATED** tag.
 - AgentKeeper cannot stop a wallet from signing a transaction. The protection comes from your approvals and the outflow monitor, which detects what you did not approve.
 - The monitor compares net balances, so incoming funds can hide outgoing ones. A clean result is a lower bound.
 - Live features use Base's public RPC endpoints, which are rate-limited.
+- Each request belongs to the vault and network it was made for. After you switch vaults, earlier requests stay as history and never count toward the new vault's cap or monitor.
 
 ## The core flow
 
@@ -33,7 +34,7 @@ Every tab and dashboard card in the app carries a **LIVE** or **SIMULATED** tag.
 3. **Submit a spend request** (Spend Requests tab). The guard decides:
    - **Approved automatically:** within all caps, and at or below the approval threshold.
    - **Awaiting approval:** within all caps, but above the threshold. You click **Approve** or **Deny**.
-   - **Blocked:** the recipient is not whitelisted, or the payment would exceed the per-transaction or rolling 24-hour cap.
+   - **Blocked:** the recipient is not whitelisted, is the USDC contract or the vault itself, or the payment would exceed the per-transaction or rolling 24-hour cap.
 4. **Pay** from your own wallet, using the transfer details shown on the approved request.
 5. **Confirm on-chain.** Paste the transaction hash. AgentKeeper checks the receipt and marks the request **Confirmed on-chain**. A wrong amount, sender or recipient, or a failed transaction, is refused. An unmined transaction can be re-checked.
 6. **Watch for outflows.** **Check vault now** flags any USDC that left the vault in the last 24 hours without a confirmed approval.
@@ -123,7 +124,7 @@ npx -y @anna-ai/cli apps publish
 
 ### 1.0.2
 
-- **Live core flow:** vault policy saved in Anna storage, spend requests with automatic approval, human approval or blocking, an exact USDC transfer for the user's own wallet, on-chain confirmation from the receipt, and a 24-hour outflow monitor.
+- **Live core flow:** vault policy saved in Anna storage (the recipient whitelist starts empty, and the USDC contract or the vault itself can never be a recipient), spend requests with automatic approval, human approval or blocking, an exact USDC transfer for the user's own wallet, on-chain confirmation from the receipt, and a 24-hour outflow monitor.
 - Every tab and card is tagged LIVE or SIMULATED.
 - The BCH tab now shows a real CHIP-2022-02 token prefix, checked against the spec's official test vectors.
 - The Autonomous Treasury tab became Agent Vault and Spend Requests. v1.0.1 treasury limits are imported automatically.
