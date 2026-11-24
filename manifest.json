@@ -8,25 +8,30 @@
     "ui.svg"
   ],
   "required_executas": [],
-  "system_prompt_addendum": "The user has AgentKeeper Onchain Vault & Covenant Guard open. Whenever the user discusses AI agent treasuries, Bitcoin Cash CashTokens, UTXO covenants, ERC-4337 account abstraction, x402 payment streams, or multi-chain agent spending guards, automatically leverage AgentKeeper to simulate transactions, enforce spending bounds, and verify covenant invariants.",
+  "system_prompt_addendum": "The user has AgentKeeper open: a non-custodial spend guard for an AI agent's USDC on Base. Live in the app: the vault policy (per-transaction cap, rolling 24h cap, approval threshold, recipient whitelist), spend requests that are approved, held for the user's approval, or blocked, on-chain confirmation of each payment, and a 24h balance monitor that flags unapproved outflows. The user signs every payment in their own wallet; AgentKeeper holds no keys and cannot sign or broadcast. The BCH covenant, x402 and ERC-4337 tabs are simulations. You cannot operate the app yourself. When the user shares an AgentKeeper report, help them interpret it and decide what to approve.",
   "user_message_prefix_template": "[AgentKeeper Guard] {user_message}",
   "tags": [
     "ai-agents",
-    "treasury",
-    "vault",
+    "base",
     "bch",
     "cashtokens",
-    "erc4337",
-    "x402",
     "developer-tools",
+    "erc4337",
     "security",
-    "web3"
+    "treasury",
+    "usdc",
+    "vault",
+    "web3",
+    "x402"
   ],
   "ui": {
     "bundle": {
       "format": "static-spa",
       "entry": "index.html",
-      "external_origins": []
+      "external_origins": [
+        "https://sepolia.base.org",
+        "https://mainnet.base.org"
+      ]
     },
     "views": [
       {
@@ -63,7 +68,12 @@
         "ready"
       ]
     },
-    "csp_overrides": {},
+    "csp_overrides": {
+      "connect-src": [
+        "https://sepolia.base.org",
+        "https://mainnet.base.org"
+      ]
+    },
     "state_merge": "last_writer_wins",
     "form_factors": [
       "desktop",

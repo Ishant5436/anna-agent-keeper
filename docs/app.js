@@ -1,15 +1,19 @@
 /**
  * AgentKeeper Studio — Cyber-OLED HUD Controller
- * Standalone & Anna AI OS Host-integrated multi-chain covenant and treasury guard.
+ * Standalone & Anna AI OS Host-integrated agent spend guard.
  *
- * Everything in this app is a local SIMULATION: nothing is signed or broadcast
- * on-chain and no funds move. Every figure on the dashboard is derived from
- * POLICY (the rules the simulators enforce) plus `session` (what was simulated
- * in this session), so the dashboard can never disagree with the tabs.
+ * LIVE: Agent Vault and Spend Requests (see vault-ui.js). Policy and approvals
+ * are saved; balances and payments are read from Base; the user signs every
+ * payment in their own wallet.
+ * SIMULATED: BCH covenant, x402 and ERC-4337 tabs. Their dashboard figures
+ * come from POLICY plus `session` (this session's simulated activity), so the
+ * dashboard can never disagree with the tabs.
  */
 
-const APP_VERSION = "1.0.1";
-const STORAGE_KEY = "agentkeeper:treasury";
+import { encodeTokenPrefix, CONSENSUS_MAX_COMMITMENT_BYTES } from "./lib/cashtokens.js";
+import { initVaultUI } from "./vault-ui.js";
+
+const APP_VERSION = "1.0.2";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const BCH_SATS = 1e8; // BCH tracked in satoshis to avoid float drift
 const USDC_MICRO = 1e6; // USDC tracked in micro-units (6 decimals)
@@ -19,15 +23,6 @@ const CASHTOKENS_MAX_AMOUNT = 9223372036854775807n; // CHIP-2022-02 fungible max
 // dashboard displays.
 const POLICY = Object.freeze({
   bch: Object.freeze({ dailyLimitBch: 10.0, scope: "per agent fleet" }),
-  treasuryDefaults: Object.freeze({
-    agent: "quant-executor-fleet-v6",
-    txCapUsdc: 50.0,
-    dailyCapUsdc: 250.0,
-    whitelist: Object.freeze([
-      "0x4200000000000000000000000000000000000006",
-      "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
-    ]),
-  }),
   x402: Object.freeze({ nonceFloor: 10001 }),
   erc4337: Object.freeze({ maxVerificationGas: 1000000 }),
 });
@@ -37,17 +32,14 @@ const POLICY = Object.freeze({
 function freshSession() {
   return {
     bch: { ledger: [], last: null }, // ledger entries: { at, sats }
-    treasury: { policy: { ...POLICY.treasuryDefaults, whitelist: [...POLICY.treasuryDefaults.whitelist] }, ledger: [], last: null },
     x402: { lastNonce: POLICY.x402.nonceFloor, receipts: [], rejected: 0, last: null },
     userOp: { last: null },
   };
 }
 let session = freshSession();
 let anna = null;
-// Set once the user edits the treasury form, so a late storage load never
-// overwrites their edits.
-let treasuryFormTouched = false;
-const TAB_CONSOLES = ["bchConsole", "treasuryConsole", "x402Console", "userOpConsole"];
+let vaultUI = null;
+const TAB_CONSOLES = ["bchConsole", "x402Console", "userOpConsole"];
 const initialConsoleHtml = {};
 
 // ---------- Helpers ----------
@@ -76,13 +68,11 @@ function fmtNum(n, minDp = 2, maxDp = 8) {
   return Number(n).toLocaleString("en-US", { minimumFractionDigits: minDp, maximumFractionDigits: maxDp });
 }
 const fmtBch = (n) => `${fmtNum(n, 2, 8)} BCH`;
-const fmtUsd = (n) => `$${fmtNum(n, 2, 6)}`;
 
 function usedInWindow(ledger, unitsKey, now = Date.now()) {
   return ledger.filter((e) => now - e.at < DAY_MS).reduce((sum, e) => sum + e[unitsKey], 0);
 }
 const bchUsedSats = () => usedInWindow(session.bch.ledger, "sats");
-const treasuryUsedMicro = () => usedInWindow(session.treasury.ledger, "micro");
 
 function setBadge(id, text, tone) {
   const badge = $(id);
@@ -115,11 +105,8 @@ function logLine(elementId, text, type = "", { keepPlaceholder = false } = {}) {
 
 // ---------- Dashboard (always derived from POLICY + session) ----------
 function renderBindings() {
-  const p = session.treasury.policy;
   const bindings = {
     bchLimit: fmtNum(POLICY.bch.dailyLimitBch, 2, 8),
-    treasuryTxCap: fmtNum(p.txCapUsdc, 2, 6),
-    treasuryDailyCap: fmtNum(p.dailyCapUsdc, 2, 6),
     gasBound: POLICY.erc4337.maxVerificationGas.toLocaleString("en-US"),
   };
   document.querySelectorAll("[data-bind]").forEach((el) => {
@@ -135,12 +122,6 @@ function renderDashboard() {
   const bchUsed = bchUsedSats() / BCH_SATS;
   $("metricBchLimit").textContent = fmtBch(POLICY.bch.dailyLimitBch);
   $("metricBchSub").textContent = `${fmtBch(bchUsed)} used · ${POLICY.bch.scope}`;
-
-  // Treasury cap: the exact policy the Test Spend simulator enforces.
-  const p = session.treasury.policy;
-  const tUsed = treasuryUsedMicro() / USDC_MICRO;
-  $("metricTreasuryCap").textContent = `${fmtUsd(p.dailyCapUsdc)} USDC`;
-  $("metricTreasurySub").textContent = `${fmtUsd(tUsed)} used · per agent · ${fmtUsd(p.txCapUsdc)}/tx`;
 
   // x402: counts only receipts actually settled in this session.
   const x = session.x402;
@@ -175,11 +156,14 @@ function initTabs() {
 function initPresets() {
   $("presetBchValidFungible")?.addEventListener("click", () => {
     $("bchAmountInput").value = "1000000";
+    $("bchCapabilityInput").value = "";
+    $("bchCommitmentInput").value = "";
     $("bchSpendInput").value = "2.5";
-    logLine("bchConsole", "Preset loaded: 1M fungible CashTokens, 2.5 BCH withdrawal.", "info");
+    logLine("bchConsole", "Preset loaded: 1M fungible CashTokens (no NFT), 2.5 BCH withdrawal.", "info");
   });
 
   $("presetBchNftState")?.addEventListener("click", () => {
+    $("bchCapabilityInput").value = "none";
     $("bchCommitmentInput").value = "02beefcafe112233";
     $("bchSpendInput").value = "1.0";
     logLine("bchConsole", "Preset loaded: Immutable NFT state commitment, 1.0 BCH withdrawal.", "info");
@@ -241,6 +225,22 @@ function initBchValidation() {
     if (commitment && !/^([0-9a-fA-F]{2})+$/.test(commitment)) {
       return reject("INVALID COMMITMENT", "NFT commitment must be hex bytes (even number of hex characters).");
     }
+    const capability = val("bchCapabilityInput");
+    if (commitment && !capability) {
+      return reject("INVALID COMMITMENT", "A commitment needs an NFT: choose an NFT type, or clear the commitment.");
+    }
+    let prefix;
+    try {
+      prefix = encodeTokenPrefix({ category, amount: tokenAmount, nft: capability ? { capability, commitment } : null });
+    } catch (e) {
+      $("bchPrefixOutput").textContent = "—";
+      return reject("INVALID TOKEN", e.message);
+    }
+    $("bchPrefixOutput").textContent = prefix;
+    logLine("bchConsole", `[PASS] Token prefix encoded (CHIP-2022-02, real encoding): ${prefix}`, "pass");
+    if (commitment.length / 2 > CONSENSUS_MAX_COMMITMENT_BYTES) {
+      logLine("bchConsole", `[WARN] Commitment is ${commitment.length / 2} bytes, over the ${CONSENSUS_MAX_COMMITMENT_BYTES}-byte consensus limit in CHIP-2022-02.`, "warn");
+    }
     if (!(spend > 0) || !Number.isFinite(spend)) {
       return reject("INVALID SPEND", "Withdrawal amount must be greater than 0 BCH.");
     }
@@ -274,7 +274,6 @@ function initBchValidation() {
       `[PASS] Spend ${fmtBch(spend)} is within the allowance. Daily usage is now ${fmtBch(nowUsed)} of ${fmtBch(POLICY.bch.dailyLimitBch)} (simulated).`,
       "pass"
     );
-    logLine("bchConsole", `[PASS] CashTokens prefix validated: commitment ${commitment || "none"}.`, "pass");
     renderDashboard();
   });
 
@@ -295,180 +294,6 @@ function initBchValidation() {
     ].join("\n");
     await dispatchToChat(msg, "bchConsole");
   });
-}
-
-// ---------- Autonomous Treasury ----------
-function readTreasuryForm() {
-  const agent = val("treasuryAgentInput").trim();
-  const txCapUsdc = parseFloat(val("treasuryTxCapInput"));
-  const dailyCapUsdc = parseFloat(val("treasuryDailyCapInput"));
-  const whitelist = val("treasuryWhitelistInput")
-    .split(/[\s,]+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  const errors = [];
-  if (!agent) errors.push("Agent ID is required.");
-  if (!(txCapUsdc > 0)) errors.push("Per-transaction cap must be greater than 0.");
-  if (!(dailyCapUsdc > 0)) errors.push("Rolling 24h cap must be greater than 0.");
-  if (txCapUsdc > 0 && dailyCapUsdc > 0 && txCapUsdc > dailyCapUsdc)
-    errors.push("Per-transaction cap cannot be larger than the rolling 24h cap.");
-  if (whitelist.length === 0) errors.push("Whitelist needs at least one address.");
-  const bad = whitelist.find((a) => !isEvmAddress(a));
-  if (bad) errors.push(`Whitelist entry is not a valid EVM address: ${bad}`);
-  return { policy: { agent, txCapUsdc, dailyCapUsdc, whitelist }, errors };
-}
-
-function writeTreasuryForm(p) {
-  $("treasuryAgentInput").value = p.agent;
-  $("treasuryTxCapInput").value = String(p.txCapUsdc);
-  $("treasuryDailyCapInput").value = String(p.dailyCapUsdc);
-  $("treasuryWhitelistInput").value = p.whitelist.join(", ");
-}
-
-// Applies the form to the live policy if valid. Returns the errors, if any.
-function applyTreasuryForm() {
-  const { policy, errors } = readTreasuryForm();
-  if (errors.length === 0) {
-    session.treasury.policy = policy;
-    renderDashboard();
-  }
-  return errors;
-}
-
-function initTreasury() {
-  ["treasuryAgentInput", "treasuryTxCapInput", "treasuryDailyCapInput", "treasuryWhitelistInput"].forEach((id) => {
-    $(id)?.addEventListener("input", () => {
-      treasuryFormTouched = true;
-      const errors = applyTreasuryForm();
-      if (errors.length) setBadge("treasuryStatusBadge", "POLICY INVALID", "amber");
-      else if ($("treasuryStatusBadge").textContent === "POLICY INVALID") setBadge("treasuryStatusBadge", "READY", "muted");
-    });
-  });
-
-  $("btnSimulateTreasury")?.addEventListener("click", () => {
-    const errors = applyTreasuryForm();
-    if (errors.length) {
-      setBadge("treasuryStatusBadge", "POLICY INVALID", "amber");
-      errors.forEach((e) => logLine("treasuryConsole", `[POLICY] ${e}`, "fail"));
-      return;
-    }
-    const p = session.treasury.policy;
-    const amount = parseFloat(val("treasuryTestAmountInput"));
-    const recipient = val("treasuryTestRecipientInput").trim();
-    const reject = (reason) => {
-      session.treasury.last = { status: "REJECTED", reason, amount, recipient };
-      setBadge("treasuryStatusBadge", "SPEND REJECTED", "red");
-      logLine("treasuryConsole", `[REJECTED] ${reason}`, "fail");
-      renderDashboard();
-    };
-
-    logLine("treasuryConsole", `Test spend (dry run): ${fmtUsd(amount || 0)} USDC → ${recipient || "?"} for agent ${p.agent}`);
-
-    if (!isEvmAddress(recipient)) return reject("Recipient is not a valid EVM address.");
-    if (!p.whitelist.some((a) => a.toLowerCase() === recipient.toLowerCase()))
-      return reject("Recipient is not on the whitelist (Zero-Contact Invariant).");
-    if (!(amount > 0) || !Number.isFinite(amount)) return reject("Amount must be greater than 0.");
-
-    const micro = Math.round(amount * USDC_MICRO);
-    if (micro < 1) return reject("Amount must be at least 0.000001 USDC.");
-    const txCapMicro = Math.round(p.txCapUsdc * USDC_MICRO);
-    const dailyCapMicro = Math.round(p.dailyCapUsdc * USDC_MICRO);
-    const usedMicro = treasuryUsedMicro();
-
-    if (micro > txCapMicro) return reject(`${fmtUsd(amount)} exceeds the per-transaction cap of ${fmtUsd(p.txCapUsdc)}.`);
-    if (usedMicro + micro > dailyCapMicro)
-      return reject(
-        `${fmtUsd(amount)} would exceed the rolling 24h cap: ${fmtUsd(usedMicro / USDC_MICRO)} of ${fmtUsd(p.dailyCapUsdc)} already used, ${fmtUsd(Math.max(0, dailyCapMicro - usedMicro) / USDC_MICRO)} remaining.`
-      );
-
-    session.treasury.ledger.push({ at: Date.now(), micro, recipient });
-    const nowUsed = treasuryUsedMicro() / USDC_MICRO;
-    session.treasury.last = { status: "APPROVED", amount, recipient };
-    setBadge("treasuryStatusBadge", "SPEND APPROVED", "green");
-    logLine(
-      "treasuryConsole",
-      `[APPROVED] Dry run passed. Rolling 24h usage is now ${fmtUsd(nowUsed)} of ${fmtUsd(p.dailyCapUsdc)} (simulated; no transaction sent).`,
-      "pass"
-    );
-    renderDashboard();
-  });
-
-  $("btnSaveTreasury")?.addEventListener("click", async () => {
-    const errors = applyTreasuryForm();
-    if (errors.length) {
-      setBadge("treasuryStatusBadge", "POLICY INVALID", "amber");
-      errors.forEach((e) => logLine("treasuryConsole", `[POLICY] ${e}`, "fail"));
-      return;
-    }
-    const payload = { ...session.treasury.policy, savedAt: Date.now() };
-
-    if (anna && anna.storage) {
-      try {
-        await anna.storage.set({ key: STORAGE_KEY, value: payload });
-        logLine("treasuryConsole", "Saved treasury limits to Anna persistent storage.", "pass");
-        return;
-      } catch (e) {
-        logLine("treasuryConsole", `Anna storage unavailable (${e && e.message ? e.message : e}); saving in this browser instead.`, "warn");
-      }
-    }
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-      logLine("treasuryConsole", "Saved treasury limits to this browser's local storage.", "pass");
-    } catch (e) {
-      logLine("treasuryConsole", "Could not save: storage is not available in this context.", "fail");
-    }
-  });
-}
-
-function normalizeSavedTreasury(raw) {
-  if (!raw || typeof raw !== "object") return null;
-  // v1.0.0 stored { agent, dailyCap } with dailyCap as a string.
-  const d = POLICY.treasuryDefaults;
-  const candidate = {
-    agent: typeof raw.agent === "string" && raw.agent ? raw.agent : d.agent,
-    txCapUsdc: parseFloat(raw.txCapUsdc ?? d.txCapUsdc),
-    dailyCapUsdc: parseFloat(raw.dailyCapUsdc ?? raw.dailyCap ?? d.dailyCapUsdc),
-    whitelist: Array.isArray(raw.whitelist) && raw.whitelist.length ? raw.whitelist : [...d.whitelist],
-  };
-  const ok =
-    candidate.txCapUsdc > 0 &&
-    candidate.dailyCapUsdc > 0 &&
-    candidate.txCapUsdc <= candidate.dailyCapUsdc &&
-    candidate.whitelist.every((a) => typeof a === "string" && isEvmAddress(a));
-  return ok ? candidate : null;
-}
-
-async function loadSavedTreasury() {
-  let raw = null;
-  let source = "";
-  if (anna && anna.storage) {
-    try {
-      const res = await anna.storage.get({ key: STORAGE_KEY });
-      raw = res && typeof res === "object" && "value" in res ? res.value : res;
-      source = "Anna persistent storage";
-    } catch (e) {
-      raw = null;
-    }
-  }
-  if (!raw) {
-    try {
-      const s = localStorage.getItem(STORAGE_KEY);
-      raw = s ? JSON.parse(s) : null;
-      source = "this browser's local storage";
-    } catch (e) {
-      raw = null;
-    }
-  }
-  const policy = normalizeSavedTreasury(raw);
-  if (!policy) return;
-  if (treasuryFormTouched) {
-    logLine("treasuryConsole", `Saved treasury limits found in ${source} but not applied, because the form was already edited.`, "info", { keepPlaceholder: true });
-    return;
-  }
-  session.treasury.policy = policy;
-  writeTreasuryForm(policy);
-  renderDashboard();
-  logLine("treasuryConsole", `Loaded saved treasury limits from ${source}.`, "info", { keepPlaceholder: true });
 }
 
 // ---------- x402 Micropayments ----------
@@ -619,19 +444,17 @@ async function dispatchToChat(message, consoleId) {
 
 // ---------- Reset ----------
 function resetSimulation() {
-  const keepPolicy = session.treasury.policy;
   session = freshSession();
-  session.treasury.policy = keepPolicy;
   TAB_CONSOLES.forEach((id) => {
     if ($(id) && id in initialConsoleHtml) $(id).innerHTML = initialConsoleHtml[id];
   });
   setBadge("bchStatusBadge", "READY", "muted");
-  setBadge("treasuryStatusBadge", "READY", "muted");
   setBadge("x402StatusBadge", "IDLE", "muted");
   setBadge("userOpStatusBadge", "READY", "muted");
   $("x402NonceInput").value = String(POLICY.x402.nonceFloor + 1);
+  $("bchPrefixOutput").textContent = "Validate to encode.";
   renderDashboard();
-  logLine("telemetryConsole", "[RESET] Simulation reset: session ledgers, receipts and counters cleared. Saved limits kept.", "info");
+  logLine("telemetryConsole", "[RESET] Simulated tabs reset (BCH covenant, x402, ERC-4337). Agent Vault and Spend Requests are unchanged.", "info");
 }
 
 // ---------- Boot ----------
@@ -645,22 +468,15 @@ async function boot() {
   initTabs();
   initPresets();
   initBchValidation();
-  initTreasury();
   initX402Validation();
   initErc4337();
-  // Some browsers restore typed form values on reload. Start from the form
-  // when it is valid, otherwise put the defaults back into it.
-  if (applyTreasuryForm().length) writeTreasuryForm(session.treasury.policy);
+  vaultUI = initVaultUI({ logLine, setBadge, dispatchToChat, getAnna: () => anna });
   renderDashboard();
 
   $("btnResetSimulation")?.addEventListener("click", resetSimulation);
   $("btnClearTelemetry")?.addEventListener("click", () => {
     const con = $("telemetryConsole");
     if (con) con.innerHTML = '<div class="terminal-line info">[LOG] Telemetry console reset.</div>';
-  });
-  $("networkSelect")?.addEventListener("change", (e) => {
-    const label = e.target.options[e.target.selectedIndex].text;
-    logLine("telemetryConsole", `[NETWORK] Context set to ${label}. Simulation only, no RPC connection.`, "info");
   });
 
   logLine("telemetryConsole", `AgentKeeper Studio v${APP_VERSION} ready.`, "info");
@@ -689,7 +505,7 @@ async function boot() {
     logLine("telemetryConsole", "Running in Standalone Preview mode (no Anna host detected).", "info");
   }
 
-  await loadSavedTreasury();
+  await vaultUI.load();
 }
 
 boot();

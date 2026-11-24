@@ -1,58 +1,80 @@
 # AgentKeeper — Onchain AI Agent Vault & Covenant Guard
 
-An Anna AI OS app for testing the spending rules you would put around an autonomous AI agent's treasury: a Bitcoin Cash CashTokens covenant limit, EVM treasury caps, x402 micropayment replay protection, and ERC-4337 gas bounds.
+A non-custodial spend guard for AI agents that pay in USDC on Base, built as an Anna AI OS app. You set the rules and approve what needs approving. You send each payment from your own wallet, and AgentKeeper confirms it on-chain and watches the vault for anything you did not approve.
 
-**Version:** 1.0.1 · **App slug:** `agent-keeper-vault` · **Live demo:** https://ishant5436.github.io/anna-agent-keeper/
+**Version:** 1.0.2 · **App slug:** `agent-keeper-vault` · **Live demo:** https://ishant5436.github.io/anna-agent-keeper/
 
-## It is a simulator
+## What is live and what is simulated
 
-AgentKeeper Studio runs every check locally in the app. Nothing is signed or broadcast on-chain, no funds move, and there is no RPC connection.
+| Feature | Status | What actually happens |
+|---|---|---|
+| **Agent Vault**: policy and setup | **Live** | Vault address, network, caps, approval threshold and whitelist are saved in Anna storage (or the browser outside Anna). |
+| **Spend Requests**: guard decisions | **Live** | Each request is approved, held for your approval, or blocked against the saved policy and a rolling 24-hour total that survives reloads. |
+| **Paying an approved request** | **Live, in your wallet** | The app shows the exact USDC transfer (wallet link, contract, calldata). You sign and send it yourself. AgentKeeper holds no keys. |
+| **On-chain confirmation** | **Live** | Reads the transaction receipt from Base and confirms the exact amount, sender (your vault) and recipient. |
+| **Live monitor** | **Live** | Reads the vault's USDC and ETH balances now and 24 hours ago from Base, and alerts you to outflows beyond your confirmed payments. |
+| **Vault report to Anna chat** | **Live** | Posts the policy, last check and open requests to your Anna chat. |
+| **BCH CashTokens Guard** | **Simulated** covenant | The 10 BCH per-fleet daily limit is simulated per session. The **token prefix is real CHIP-2022-02 encoding**, checked against the spec's official test vectors. Nothing is broadcast on BCH. |
+| **x402 Micropayments** | **Simulated** | Claim settlement with nonce replay protection. Signatures are not checked; no payment moves. |
+| **ERC-4337** | **Simulated** | Local UserOperation pre-flight checks. Nothing is sent to a bundler. |
 
-The dashboard is computed live from the same rules the tabs enforce. It counts only what you simulated in the current session, and **Reset simulation** clears it. It never shows historical or on-chain data.
+Every tab and dashboard card in the app carries a **LIVE** or **SIMULATED** tag.
 
-## What each tab does
+### Limits
 
-| Tab | What it checks |
-|---|---|
-| **BCH CashTokens Guard** | Validates a CashTokens (CHIP-2022-02) withdrawal request: category ID format, token amount range, NFT commitment format, and the covenant's daily BCH limit. |
-| **Autonomous Treasury** | Holds an agent's EVM spend policy. **Test Spend** dry-runs a USDC spend against the per-transaction cap, the rolling 24h cap and the recipient whitelist. |
-| **x402 Micropayments** | Verifies an HTTP 402 payment claim. A claim settles only if its nonce is higher than the last one, so a replayed nonce is rejected. Signatures are not checked. |
-| **ERC-4337 Simulation** | Pre-flight checks on a UserOperation: sender address, calldata format, and a verification gas bound. Nothing is sent to a bundler. |
-| **Telemetry & Chat Sync** | One audit log of every check, approval and rejection in the session. |
+- AgentKeeper cannot stop a wallet from signing a transaction. The protection comes from your approvals and the outflow monitor, which detects what you did not approve.
+- The monitor compares net balances, so incoming funds can hide outgoing ones. A clean result is a lower bound.
+- Live features use Base's public RPC endpoints, which are rate-limited.
+
+## The core flow
+
+1. **Set up the vault** (Agent Vault tab). Choose Base Sepolia (testnet) or Base Mainnet. Enter the vault address your agent spends from, a per-transaction cap, a rolling 24-hour cap, an approval threshold, and the recipient whitelist. Then click **Save vault**.
+2. **Check the vault.** The live monitor reads the real USDC and ETH balances and the 24-hour net change.
+3. **Submit a spend request** (Spend Requests tab). The guard decides:
+   - **Approved automatically:** within all caps, and at or below the approval threshold.
+   - **Awaiting approval:** within all caps, but above the threshold. You click **Approve** or **Deny**.
+   - **Blocked:** the recipient is not whitelisted, or the payment would exceed the per-transaction or rolling 24-hour cap.
+4. **Pay** from your own wallet, using the transfer details shown on the approved request.
+5. **Confirm on-chain.** Paste the transaction hash. AgentKeeper checks the receipt and marks the request **Confirmed on-chain**. A wrong amount, sender or recipient, or a failed transaction, is refused. An unmined transaction can be re-checked.
+6. **Watch for outflows.** **Check vault now** flags any USDC that left the vault in the last 24 hours without a confirmed approval.
+
+To try it with no real funds, use Base Sepolia and testnet USDC from a faucet.
 
 ## Which limit applies where
 
 | Dashboard card | Limit | Scope | Enforced in |
 |---|---|---|---|
-| **BCH Covenant Daily Limit** | 10.00 BCH, rolling 24h | Per agent fleet. Each verified BCH withdrawal uses part of it. | BCH CashTokens Guard |
-| **Treasury 24h Spend Cap** | $250.00 USDC rolling 24h, plus $50.00 per transaction. Both are editable. | Per agent, EVM treasury spends only. Separate from the BCH limit. | Autonomous Treasury (**Test Spend**) |
-| **x402 Settlements** | No amount cap. Each claim needs a nonce above the last settled one (the starting floor is 10001). | Counts claims settled and rejected in this session. Starts at **0 settled**. | x402 Micropayments (**Verify & Settle**) |
-| ERC-4337 (no card) | 1,000,000 verification gas | Per UserOperation | ERC-4337 Simulation |
+| **Agent Vault** (live) | None. Shows the real USDC balance and outflow alerts. | The saved vault address | Agent Vault |
+| **Spend Guard 24h Cap** (live) | 250 USDC rolling 24h, 50 USDC per transaction, approval above 25 USDC (defaults, editable) | Per vault. Counts pending, approved and confirmed payments. | Spend Requests |
+| **BCH Covenant Daily Limit** (simulated) | 10.00 BCH rolling 24h | Per agent fleet, this session | BCH CashTokens |
+| **x402 Settlements** (simulated) | No amount cap; nonce must exceed the last settled one | This session | x402 |
+| ERC-4337 (no card, simulated) | 1,000,000 verification gas | Per UserOperation | ERC-4337 |
 
-Amounts smaller than one unit are rejected: 1 satoshi (0.00000001 BCH) and 0.000001 USDC.
+## Networks
 
-## Anna integration
+| Network | Chain ID | USDC contract | RPC |
+|---|---|---|---|
+| Base Sepolia (testnet, default) | 84532 | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` | `https://sepolia.base.org` |
+| Base Mainnet | 8453 | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` | `https://mainnet.base.org` |
 
-- **Send to Anna Chat** posts a brief of the last real result (verified, blocked, rejected, or not run) to the active chat. Outside Anna it copies the brief to the clipboard.
-- **Save Treasury Limits** stores the treasury policy in Anna storage and loads it on the next start. Outside Anna it uses the browser's local storage.
-- Opened outside Anna (for example the live demo), the app shows **Standalone Mode** and everything else works the same.
+Both contract addresses were checked on-chain (symbol `USDC`, 6 decimals). Both RPC origins are declared in `manifest.json`.
 
 ## Repository layout
 
 | Path | Purpose |
 |---|---|
-| `bundle/` | The app that Anna loads: `index.html`, `app.js`, `style.css`. |
-| `docs/` | An identical copy of `bundle/`, served by GitHub Pages as the live demo. |
+| `bundle/` | The app that Anna loads. `vault-ui.js` is the live vault UI; `app.js` holds the simulated tabs and wiring. |
+| `bundle/lib/vault.js` | Pure vault logic: policy, rolling ledger, transfer encoding, receipt matching, outflow check. |
+| `bundle/lib/rpc.js` | Live reads from Base: blocks, balances at a block, receipts. |
+| `bundle/lib/cashtokens.js` | CHIP-2022-02 token-prefix encoding. |
+| `docs/` | Identical copy of `bundle/`, served by GitHub Pages as the live demo. |
 | `manifest.json`, `app.json` | Anna app manifest and store listing. |
-| `assets/` | Logo, cover and store screenshots. |
-| `tests/e2e.cjs` | End-to-end browser test. |
+| `tests/` | Unit, end-to-end and live tests, plus the official CashTokens test vectors. |
 
-All limits live in one `POLICY` object at the top of `bundle/app.js`. Change a limit there and the dashboard, hints and messages follow.
-
-After editing `bundle/`, copy it to `docs/` (the test fails if they differ):
+After editing `bundle/`, copy it to `docs/` (the end-to-end test fails if they differ):
 
 ```bash
-cp bundle/* docs/
+rm -rf docs && cp -r bundle docs
 ```
 
 ## Run locally
@@ -61,11 +83,9 @@ cp bundle/* docs/
 python3 -m http.server 8080 --directory bundle
 ```
 
-Then open http://localhost:8080. The app must be served over HTTP; opening `index.html` as a file will not load the script.
+Then open http://localhost:8080. The app must be served over HTTP; opening `index.html` as a file will not load the scripts.
 
 ## Testing
-
-`tests/e2e.cjs` clicks every button on every tab in Chromium (96 checks). After each step it checks that the dashboard matches what the tab enforces. It also covers mobile and Anna's minimum window size, and runs once more against a mock Anna host to verify the chat and storage calls.
 
 ```bash
 npm install
@@ -77,6 +97,14 @@ npx playwright install chromium
 
 ```bash
 npm test
+```
+
+- `tests/unit.mjs` covers the vault policy and rolling cap, transfer encoding, receipt matching and the outflow check. It also checks the CashTokens encoder against all 62 official CHIP-2022-02 vectors.
+- `tests/e2e.cjs` drives every tab and button in Chromium against a mock Base chain. It covers the full request lifecycle (including wrong, failed and unmined transactions), outflow alerts, persistence, mobile layout, Anna's minimum window size, the Anna host chat and storage calls, and migration of v1.0.1 settings.
+- `tests/live.cjs` runs the core flow against the **real Base Sepolia testnet**. It finds a recent real USDC transfer, saves its sender as the vault, submits and approves a matching request, and confirms the real transaction on-chain through the app's UI. It needs network access:
+
+```bash
+node tests/live.cjs
 ```
 
 ## Validate and publish
@@ -91,21 +119,20 @@ npx -y @anna-ai/cli validate
 npx -y @anna-ai/cli apps publish
 ```
 
-## Rules the simulator enforces
-
-1. Every spend check has a fixed ceiling, and a blocked or rejected request never counts as used.
-2. An x402 claim settles only with a nonce above the last settled one.
-3. Every input is validated before a result is shown, and a result is reported only for a check that actually ran.
-
 ## Changelog
+
+### 1.0.2
+
+- **Live core flow:** vault policy saved in Anna storage, spend requests with automatic approval, human approval or blocking, an exact USDC transfer for the user's own wallet, on-chain confirmation from the receipt, and a 24-hour outflow monitor.
+- Every tab and card is tagged LIVE or SIMULATED.
+- The BCH tab now shows a real CHIP-2022-02 token prefix, checked against the spec's official test vectors.
+- The Autonomous Treasury tab became Agent Vault and Spend Requests. v1.0.1 treasury limits are imported automatically.
+- Removed the header network selector; the vault's network setting replaces it.
+- Anna's agent is no longer told it can operate the app.
+- Added unit tests and a live test against Base Sepolia.
 
 ### 1.0.1
 
-- The dashboard now shows the limits the tabs enforce (BCH 10.00 per agent fleet, treasury $250.00 per 24h), each labelled with its scope. It previously showed an unrelated "150.00 BCH".
+- The dashboard now shows the limits the tabs enforce, each labelled with its scope. It previously showed an unrelated "150.00 BCH".
 - x402 settlements are counted from this session and start at 0. The dashboard previously showed "100% Settled".
-- Added the simulation notice and **Reset simulation**.
-- **Test Spend** now works, and saved treasury limits load on start.
-- Chat briefs report the real last result, and the chat call uses the field the Anna host expects.
-- Amounts below the smallest unit are rejected.
-- Fixed mobile and small-window layouts.
-- Added the end-to-end test.
+- Added the simulation notice, **Reset simulation** and the end-to-end test. Fixed **Test Spend**, chat briefs, sub-unit amounts and mobile layouts.
